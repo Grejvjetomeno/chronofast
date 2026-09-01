@@ -18,6 +18,16 @@ for (const f of ['index.js', 'index.d.ts', 'core.js', 'core.d.ts', 'zone.js', 'z
 check(!readdirSync('lib').some((f) => f.endsWith('.map')),
       'no source maps in the published build');
 
+// --- browser bundles present and minified ---
+check(existsSync('browser/chronofast.min.js'), 'browser/chronofast.min.js built');
+check(existsSync('browser/chronofast.global.min.js'), 'browser/chronofast.global.min.js built');
+if (existsSync('browser/chronofast.min.js')) {
+  const b = readFileSync('browser/chronofast.min.js', 'utf8');
+  check(b.length < readFileSync('lib/core.js', 'utf8').length,
+        'browser bundle is actually minified (smaller than one unminified module)');
+  check(b.startsWith('/*!'), 'browser bundle keeps its licence banner');
+}
+
 // --- every exports path resolves ---
 for (const [sub, def] of Object.entries(pkg.exports || {})) {
   if (typeof def !== 'object') continue;
@@ -73,9 +83,9 @@ try {
   const entry = Array.isArray(packed) ? packed[0] : packed;
   if (entry) {
     const names = entry.files.map((f) => f.path);
-    check(names.every((n) => n.startsWith('lib/') || n === 'package.json' ||
+    check(names.every((n) => n.startsWith('lib/') || n.startsWith('browser/') || n === 'package.json' ||
                              /^(README|LICENSE)/i.test(n)),
-          `tarball contains only lib/ + metadata (${entry.entryCount} files, ${(entry.unpackedSize / 1024).toFixed(1)} kB)`);
+          `tarball contains only lib/ + browser/ + metadata (${entry.entryCount} files, ${(entry.unpackedSize / 1024).toFixed(1)} kB)`);
     check(!names.some((n) => n.startsWith('src/') || n.startsWith('bench/') || n.startsWith('test/')),
           'no source, bench or test files in the tarball');
   }

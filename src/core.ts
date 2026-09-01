@@ -386,13 +386,15 @@ export function getSecond(ms: EpochMs): number {
 }
 export function getMillisecond(ms: EpochMs): number {
   const r = ms % MS_SEC;
-  return r < 0 ? r + MS_SEC : r;
+  // `| 0` also normalises -0 to 0: a negative instant landing exactly on a second boundary
+  // otherwise returns -0, which compares equal to 0 but is distinguishable via Object.is.
+  return (r < 0 ? r + MS_SEC : r) | 0;
 }
 
 /** 0 = Sunday, matching `Date.prototype.getUTCDay()`. */
 export function dayOfWeek(ms: EpochMs): number {
   const w = (Math.floor(ms / MS_DAY) + 4) % 7;
-  return w < 0 ? w + 7 : w;
+  return (w < 0 ? w + 7 : w) | 0;      // `| 0` normalises -0 to 0
 }
 
 /** 1 = Monday .. 7 = Sunday, matching `Temporal.PlainDate#dayOfWeek`. */

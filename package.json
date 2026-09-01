@@ -6,20 +6,34 @@
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
   "exports": {
-    ".": { "types": "./lib/index.d.ts", "default": "./lib/index.js" },
-    "./core": { "types": "./lib/core.d.ts", "default": "./lib/core.js" },
-    "./zone": { "types": "./lib/zone.d.ts", "default": "./lib/zone.js" },
-    "./package.json": "./package.json"
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./core": {
+      "types": "./lib/core.d.ts",
+      "default": "./lib/core.js"
+    },
+    "./zone": {
+      "types": "./lib/zone.d.ts",
+      "default": "./lib/zone.js"
+    },
+    "./package.json": "./package.json",
+    "./browser": {
+      "default": "./browser/chronofast.min.js"
+    }
   },
   "files": [
-    "lib/**/*"
+    "lib/**/*",
+    "browser/**/*"
   ],
   "sideEffects": false,
   "scripts": {
-    "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\"",
-    "build": "npm run clean && tsc --project tsconfig.build.json",
+    "clean": "node -e \"const f=require('node:fs');for(const d of ['lib','browser'])f.rmSync(d,{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc --project tsconfig.build.json && node scripts/build-browser.js",
+    "build:browser": "node scripts/build-browser.js",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node test/verify.js",
+    "test": "npm run build && npm run test:unit && npm run test:differential && npm run test:legacy && npm run test:bundle",
     "bench": "npm run build && node --expose-gc bench/main.js --tag node --alloc",
     "bench:temporal": "node --expose-gc --harmony-temporal bench/main.js --tag node-temporal --alloc",
     "bench:bun": "bun bench/main.js --tag bun --alloc",
@@ -27,7 +41,11 @@
     "report": "node bench/report/merge.js && node bench/report/artifact.js",
     "size": "node scripts/size.js",
     "release:check": "node scripts/prepublish-check.js",
-    "prepublishOnly": "npm run build && node test/verify.js && node scripts/prepublish-check.js"
+    "prepublishOnly": "npm run build && npm run test:unit && npm run test:differential && npm run test:legacy && npm run test:bundle && node scripts/prepublish-check.js",
+    "test:unit": "node --test test/*.test.js",
+    "test:differential": "node test/verify.js",
+    "test:legacy": "node test/verify-legacy-intl.js",
+    "test:bundle": "node scripts/verify-browser-bundle.js"
   },
   "repository": {
     "type": "git",
@@ -61,7 +79,10 @@
   "homepage": "https://github.com/brunolau/chronofast",
   "devDependencies": {
     "@js-temporal/polyfill": "^0.5.1",
+    "esbuild": "^0.28.2",
     "temporal-polyfill": "^1.0.4",
     "typescript": "^6.0.3"
-  }
+  },
+  "unpkg": "./browser/chronofast.global.min.js",
+  "jsdelivr": "./browser/chronofast.global.min.js"
 }

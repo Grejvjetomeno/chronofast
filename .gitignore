@@ -5,3 +5,4 @@ results/*.json
 report.html
 *.tsbuildinfo
 .DS_Store
+browser/

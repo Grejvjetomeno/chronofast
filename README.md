@@ -230,37 +230,87 @@ The first is a footgun worth rejecting, and `Temporal` rejects it too. The other
 valid grammar that chronofast does not implement. All three are asserted as contract in the
 test suite rather than treated as bugs.
 
-## Size
+## Builds, size, and browser support
+
+Two outputs. `lib/` is what bundlers and Node consume; `browser/` is for people not running
+a bundler at all.
 
 ```
-file                 raw        gzip      brotli
-------------------------------------------------
-brand.js         2.21 kB     0.99 kB     0.83 kB
-core.js         20.08 kB     5.78 kB     5.00 kB
-index.js         6.98 kB     1.89 kB     1.64 kB
-zone.js         13.04 kB     4.51 kB     3.90 kB
-------------------------------------------------
-TOTAL           42.31 kB    13.17 kB    11.36 kB
+lib/ (ESM, unminified, tree-shakeable)          raw       gzip     brotli
+  TOTAL                                     42.31 kB   13.17 kB   11.36 kB
+
+browser/ (minified, single file)                raw       gzip     brotli
+  chronofast.min.js          ESM              14.59 kB    5.15 kB    4.58 kB
+  chronofast.global.min.js   window global    15.04 kB    5.35 kB    4.78 kB
 ```
 
-Unminified, and comments are a good share of it — the source explains why things are the
-way they are, including what was tried and rejected. A bundler that minifies will land well
-below the gzip figure. Reproduce with `npm run size`.
+`lib/` stays unminified deliberately: bundlers minify anyway, and readable output keeps
+stack traces and tree-shaking useful. Reproduce both with `npm run size`.
 
-## Testing and benchmarking
+```html
+<script type="module">
+  import { ChronoInstant } from 'https://unpkg.com/chronofast/browser/chronofast.min.js';
+  console.log(ChronoInstant.now().toISOString());
+</script>
+
+<!-- or as a global -->
+<script src="https://unpkg.com/chronofast"></script>
+<script>console.log(chronofast.ChronoInstant.now().toISOString());</script>
+```
+
+### Which JavaScript version
+
+| | |
+|---|---|
+| `lib/` compile target | **ES2022** |
+| `browser/` bundle target | **ES2020** |
+| Syntax actually emitted | **ES2015** — classes, arrow functions, `const`/`let`, template literals. No optional chaining, no nullish coalescing, no private fields, no `BigInt`. |
+| Runtime APIs required | `Map`, `Set`, `Int32Array`, `Uint8Array`, `Number.isFinite`, `Intl.DateTimeFormat` |
+
+The ES2022 target is a floor on the *typings*, not on the output: `Intl.DateTimeFormatOptions`
+only knows about `timeZoneName: 'longOffset'` from the ES2020 lib onward. Compiled down to
+ES2015 — even to ES5 — the emitted code still passes the full correctness gate.
+
+**The real browser constraint is `Intl`, not syntax.** `timeZoneName: 'longOffset'` is
+ECMA-402 2021: Chrome 95+, Firefox 91+, Safari 15.4+. Older engines throw when the option is
+*constructed*, so chronofast feature-detects it once per realm and falls back to
+reconstructing the wall clock from `formatToParts` — slower per uncached lookup, identical
+results. `hasFastOffsetPath()` in `chronofast/zone` reports which path you are on, and the
+fallback is covered by its own differential test (`test/verify-legacy-intl.js`) rather than
+left to rot.
+
+Below that, everything needed is ES2015-era. Time zones require `Intl` with full ICU; on a
+Node build compiled with `small-icu`, only UTC will resolve.
+
+## Testing
 
 ```bash
-npm test          # build, then the full correctness gate
-npm run bench     # Node
-npm run bench:all # Node, Node --harmony-temporal, Bun, then build the report
-npm run size      # what actually ships
+npm test                  # build, then every suite below
+npm run test:unit         # 305 assertions, ~0.5s
+npm run test:differential # the wide sweeps against Date and Temporal
+npm run test:legacy       # the Intl fallback path, on a simulated old engine
+npm run test:bundle       # the minified browser builds
+npm run release:check     # 39 publish preconditions
 ```
 
-The correctness gate is not a unit-test suite; it is a differential one. It checks the UTC
-engine against native `Date` over 200,000 random instants, the parser across every accepted
-ISO form plus 1,488 date-validity cases, and the zone engine against both `Intl` and the
-Temporal polyfill across ten zones — including Lord Howe (30-minute DST), Chatham (+12:45)
-and the day Pacific/Apia skipped entirely.
+| Suite | What it protects |
+|---|---|
+| `parse.test.js` | Every accepted ISO form and every rejected one, exactly. The library has **two** parse paths — a constant-index fast path for the canonical 24-character form and a general scanner — so a large part of this file exists to prove they cannot drift apart. |
+| `format.test.js` | Byte-exact output. The emitters build the whole result in one `String.fromCharCode` call, where an off-by-one produces a wrong string rather than a crash. Includes the day-string memo under interleaved access. |
+| `arithmetic.test.js` | The end-of-month clamping matrix across every month, every day 28–31, leap and non-leap and ÷100 and ÷400 years, ±24 months — 4,000-plus combinations checked for "never lands in the wrong month". |
+| `fields.test.js` | Field access against `Date`, ISO week numbering against hand-checked values, and the **live-binding scratch slots** — a real bug once shipped in this repo's benchmark harness by copying them with object spread. Also guards against returning `-0`. |
+| `zone.test.js` | Known offsets, DST transitions resolved to the second, cache-vs-uncached agreement hourly across two years for twelve zones, and order-independence: forwards, backwards, shuffled, and with several zones interleaved. |
+| `api.test.js` | The published contract. Exact export list, exact method and getter names, no internals leaking, every error type reachable, immutability of every method. |
+| `perf-smoke.test.js` | A catastrophe detector with ~20× headroom. Catches a cache that stopped caching or an accidental O(n) scan; deliberately asserts no timing ratios. |
+
+Two suites run outside the unit runner because they need a modified environment:
+`test/verify-legacy-intl.js` patches `Intl.DateTimeFormat` to throw exactly as a pre-2021
+engine does and cross-checks the fallback against the fast path across eight zones, and
+`scripts/verify-browser-bundle.js` exercises the **minified** artefacts including 20,000
+differential samples against `Date`.
+
+Everything is deterministic — a seeded LCG, no `Date.now()`, no `Math.random()` — so a
+failure reproduces from the test name alone.
 
 ### On trusting benchmark numbers
 

@@ -37,9 +37,25 @@ interface Split {
 }
 type Entry = Run | Split;
 
+/**
+ * `timeZoneName: 'longOffset'` is ECMA-402 (2021): Chrome 95+, Firefox 91+, Safari 15.4+,
+ * Node 18+. Older engines throw RangeError when the option is *constructed*, not when it
+ * is read - so this has to be detected up front rather than caught at parse time.
+ * Detected once per realm; everything falls back to the slower reconstruct-the-wall-clock
+ * path when it is missing.
+ */
+const LONG_OFFSET_SUPPORTED = /* @__PURE__ */ (() => {
+  try {
+    const f = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', timeZoneName: 'longOffset' });
+    return f.format(0).indexOf('GMT') >= 0;
+  } catch {
+    return false;
+  }
+})();
+
 class Zone {
   readonly id: string;
-  readonly offFmt: Intl.DateTimeFormat;
+  readonly offFmt: Intl.DateTimeFormat | null;
   readonly days = new Map<number, Entry>();
   hotLo = 1;
   hotHi = 0;
@@ -48,7 +64,13 @@ class Zone {
 
   constructor(id: string) {
     this.id = id;
-    this.offFmt = new Intl.DateTimeFormat('en-US', { timeZone: id, timeZoneName: 'longOffset' });
+    this.offFmt = LONG_OFFSET_SUPPORTED
+      ? new Intl.DateTimeFormat('en-US', { timeZone: id, timeZoneName: 'longOffset' })
+      : null;
+    if (this.offFmt === null) {
+      // Validate the zone id anyway, so an unknown zone still fails fast on old engines.
+      new Intl.DateTimeFormat('en-US', { timeZone: id });
+    }
   }
 }
 
@@ -71,6 +93,7 @@ function zone(tz: TimeZoneId | string): Zone {
 // [6] Read the offset out of a "…, GMT+01:00" tail. "GMT" alone means zero.
 function rawOffset(zc: Zone, utcMs: number): number {
   zc.intlCalls++;
+  if (zc.offFmt === null) return offsetFallback(zc, utcMs);
   const str = zc.offFmt.format(utcMs);
   const i = str.lastIndexOf('GMT');
   if (i < 0) return offsetFallback(zc, utcMs);
@@ -296,7 +319,9 @@ function year4or6(y: number): string {
     return y < 10 ? '000' + y : y < 100 ? '00' + y : y < 1000 ? '0' + y : '' + y;
   }
   const a = y < 0 ? -y : y;
-  return (y < 0 ? '-' : '+') + String(a).padStart(6, '0');
+  const p = a < 10 ? '00000' : a < 100 ? '0000' : a < 1000 ? '000'
+          : a < 10000 ? '00' : a < 100000 ? '0' : '';
+  return (y < 0 ? '-' : '+') + p + a;
 }
 
 /**
@@ -359,6 +384,9 @@ export function toZonedISODate(tz: TimeZoneId | string, utcMs: EpochMs): string 
 }
 
 // ---------------------------------------------------------------- introspection
+
+/** False on engines predating ECMA-402 `longOffset`; the slower fallback is in use. */
+export const hasFastOffsetPath = (): boolean => LONG_OFFSET_SUPPORTED;
 
 export interface ZoneStats {
   readonly intlCalls: number;
