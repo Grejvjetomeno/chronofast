@@ -1,0 +1,67 @@
+{
+  "name": "chronofast",
+  "version": "1.0.0",
+  "description": "Performance-oriented, fully typed date library for JS and TS. Real IANA time zones without bundling a tzdb.",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/index.d.ts", "default": "./lib/index.js" },
+    "./core": { "types": "./lib/core.d.ts", "default": "./lib/core.js" },
+    "./zone": { "types": "./lib/zone.d.ts", "default": "./lib/zone.js" },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc --project tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node test/verify.js",
+    "bench": "npm run build && node --expose-gc bench/main.js --tag node --alloc",
+    "bench:temporal": "node --expose-gc --harmony-temporal bench/main.js --tag node-temporal --alloc",
+    "bench:bun": "bun bench/main.js --tag bun --alloc",
+    "bench:all": "npm run bench && npm run bench:temporal && npm run bench:bun && npm run report",
+    "report": "node bench/report/merge.js && node bench/report/artifact.js",
+    "size": "node scripts/size.js",
+    "release:check": "node scripts/prepublish-check.js",
+    "prepublishOnly": "npm run build && node test/verify.js && node scripts/prepublish-check.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brunolau/chronofast.git"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Bruno Laurinec",
+    "email": "brunolau@users.noreply.github.com",
+    "url": "https://github.com/brunolau"
+  },
+  "engines": {
+    "node": ">=18.0"
+  },
+  "keywords": [
+    "date",
+    "datetime",
+    "time",
+    "timezone",
+    "iana",
+    "dst",
+    "iso8601",
+    "typescript",
+    "performance",
+    "temporal",
+    "zero-dependencies"
+  ],
+  "bugs": {
+    "url": "https://github.com/brunolau/chronofast/issues"
+  },
+  "homepage": "https://github.com/brunolau/chronofast",
+  "devDependencies": {
+    "@js-temporal/polyfill": "^0.5.1",
+    "temporal-polyfill": "^1.0.4",
+    "typescript": "^6.0.3"
+  }
+}

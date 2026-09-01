@@ -1,0 +1,7 @@
+node_modules/
+lib/
+results/*.log
+results/*.json
+report.html
+*.tsbuildinfo
+.DS_Store
