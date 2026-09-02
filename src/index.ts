@@ -13,20 +13,25 @@
 // This mirrors how Temporal separates Instant / PlainDateTime / ZonedDateTime, and for the
 // same reason: capabilities are removed rather than merely documented.
 
-export type { EpochMs, WallMs, TimeZoneId } from './brand.js';
+export type { EpochMs, WallMs, TimeZoneId, DayIndex } from './brand.js';
 export { InvalidInstantError, UnknownTimeZoneError } from './brand.js';
 export type { DateTimeFields } from './core.js';
 export type { Disambiguation } from './zone.js';
 export { AmbiguousTimeError } from './zone.js';
 
-import type { EpochMs, WallMs, TimeZoneId } from './brand.js';
+import type { EpochMs, WallMs, TimeZoneId, DayIndex } from './brand.js';
 import {
-  unsafeEpochMs, unsafeWallMs, epochMs as checkedEpochMs, timeZone as checkedZone,
+  unsafeEpochMs, unsafeWallMs, unsafeDayIndex, epochMs as checkedEpochMs,
+  timeZone as checkedZone,
   InvalidInstantError,
 } from './brand.js';
 import {
-  parseISO, hasZoneDesignator, toISO, toISODate, unpack, readFields,
-  pad2, pad3, pad4, daysFromCivil, MS_DAY,
+  parseISO, parseISOWall, hasZoneDesignator, hasUtcDesignator, toISO, toISODate, unpack, readFields,
+  pad2, pad3, pad4, daysFromCivil, MS_DAY, civilFromDays, dayIndexOf, isoDateOfDay,
+  daysInMonth as daysInMonthRaw, isLeapYear as isLeapYearRaw,
+  dayOfWeekOfDay, dayOfYearOfDay, isoWeekOfDay, isoWeekYearOfDay,
+  startOfMonthOfDay, startOfYearOfDay, startOfWeekOfDay, endOfMonthOfDay,
+  addMonthsOfDay, diffMonthsOfDay,
   addMonths as addMonthsRaw, addYears as addYearsRaw,
   startOfDay as startOfDayRaw, startOfHour as startOfHourRaw,
   startOfMinute as startOfMinuteRaw, startOfMonth as startOfMonthRaw,
@@ -37,7 +42,7 @@ import {
   type DateTimeFields,
 } from './core.js';
 import {
-  offsetAt, utcFromWall, formatZoned, toZonedISODate, startOfDayZoned,
+  offsetAt, utcFromWall, formatZoned, toZonedISODate, startOfDayZoned, formatLocale,
   addDaysZoned, addMonthsZoned, zonedFields, type Disambiguation,
 } from './zone.js';
 import { cY, cM, cD, cH, cMi, cS, cMs } from './core.js';
@@ -204,6 +209,32 @@ export class ChronoInstant {
    * not travel into JSON looking like a timestamp.
    */
   toJSON(): string | null { return this.ms === this.ms ? toISO(this.ms) : null; }
+
+  /**
+   * Locale-aware text, through `Intl`. A moment has no zone of its own, so this renders in the **host** zone, matching
+   * `Temporal.Instant#toLocaleString`. Use {@link inZone} first to pick the zone yourself.
+   *
+   * ```ts
+   * t.toLocaleString('sk-SK')                       // '2. 9. 2026 14:30:00' (host zone)
+   * t.inZone('Asia/Tokyo').toLocaleString('sk-SK')  // the same moment in Tokyo
+   * ```
+   *
+   * Formatters are cached, so a repeated call costs ~1.2us rather than the ~46us of
+   * building one. Without this method the call would silently resolve to
+   * `Object.prototype.toLocaleString`, which ignores the locale and returns the ISO string.
+   */
+  toLocaleString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
+    return formatLocale(this.ms, Now.timeZoneId(), locales, options, 0);
+  }
+  /** Date only, in the caller's locale. */
+  toLocaleDateString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
+    return formatLocale(this.ms, Now.timeZoneId(), locales, options, 1);
+  }
+  /** Time only, in the caller's locale. */
+  toLocaleTimeString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
+    return formatLocale(this.ms, Now.timeZoneId(), locales, options, 2);
+  }
+
   /** The epoch milliseconds, so `<`, `>` and `-` work between moments. */
   valueOf(): number { return this.ms; }
 }
@@ -246,15 +277,15 @@ export class ChronoPlain {
    * moment, or {@link ChronoZoned.parse} to resolve one against a zone.
    */
   static parse(s: string): ChronoPlain {
-    const ms = parseISO(s);
-    if (ms !== ms) throw new InvalidInstantError(s);
-    return new ChronoPlain(unsafeWallMs(ms));
+    const wall = parseISOWall(s);
+    if (wall !== wall) throw new InvalidInstantError(s);
+    return new ChronoPlain(wall);
   }
 
   /** Like {@link parse}, but returns `null` instead of throwing. */
   static tryParse(s: string): ChronoPlain | null {
-    const ms = parseISO(s);
-    return ms !== ms ? null : new ChronoPlain(unsafeWallMs(ms));
+    const wall = parseISOWall(s);
+    return wall !== wall ? null : new ChronoPlain(wall);
   }
 
   /**
@@ -369,10 +400,41 @@ export class ChronoPlain {
    * Without this, JavaScript falls back to comparing the ISO strings, which is subtly
    * wrong: `'+010000-01-01'` sorts before `'2024-03-15'` because `'+'` precedes `'2'`.
    *
-   * TypeScript still refuses to compare a `ChronoPlain` with a `ChronoInstant` - the
-   * operator rejects mixed operand types - so this does not reopen that confusion.
+   * TypeScript refuses to compare a `ChronoPlain` with a `ChronoInstant` directly - the
+   * operator rejects mixed operand types. **Plain JavaScript does not**, and neither does
+   * TypeScript once you unwrap both sides yourself: `p.valueOf() < i.valueOf()` compares a
+   * wall clock against an epoch instant and quietly answers with whichever number is
+   * larger. The two are different coordinate systems; convert with {@link assumeZone}
+   * before comparing across them.
    */
   valueOf(): number { return this.wall; }
+
+  /**
+   * Locale-aware text, through `Intl`. The reading is rendered **exactly as written** - a
+   * `timeZone` option is ignored, because a wall clock with no zone has no moment to
+   * shift. Same rule as `Temporal.PlainDateTime#toLocaleString`.
+   *
+   * ```ts
+   * p.toLocaleString('sk-SK')                                  // '2. 9. 2026 14:30:00'
+   * p.toLocaleDateString('sk-SK', { month: 'long', day: 'numeric', year: 'numeric' })
+   * //  '2. septembra 2026'
+   * ```
+   *
+   * Formatters are cached, so a repeated call costs ~1.2us rather than the ~46us of
+   * building one. Without this method the call would silently resolve to
+   * `Object.prototype.toLocaleString`, which ignores the locale and returns the ISO string.
+   */
+  toLocaleString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
+    return formatLocale(this.wall, 'UTC', locales, options, 0);
+  }
+  /** Date only, in the caller's locale. */
+  toLocaleDateString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
+    return formatLocale(this.wall, 'UTC', locales, options, 1);
+  }
+  /** Time only, in the caller's locale. */
+  toLocaleTimeString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
+    return formatLocale(this.wall, 'UTC', locales, options, 2);
+  }
 
   /** Same reading, to the millisecond. */
   equals(other: ChronoPlain): boolean { return this.wall === other.wall; }
@@ -414,6 +476,14 @@ export class ChronoPlain {
            pad2(cH) + ':' + pad2(cMi) + ':' + pad2(cS) + frac;
   }
 
+  /**
+   * Drop the time and keep the calendar date, as a {@link ChronoDate}. The result cannot
+   * carry a time at all, which is the difference between this and `startOfDay()`.
+   */
+  toPlainDate(): ChronoDate {
+    return new ChronoDate(dayIndexOf(this.wall));
+  }
+
   /** `YYYY-MM-DD`. Identical to `Temporal.PlainDate#toString()`. */
   toISODate(): string { return toISODate(this.wall as unknown as EpochMs); }
   /** Same as {@link toPlainISOString}, but yields `'Invalid Date'` instead of throwing. */
@@ -423,6 +493,241 @@ export class ChronoPlain {
    * An invalid reading serialises to `null`, matching `Date#toJSON()`.
    */
   toJSON(): string | null { return this.wall === this.wall ? this.toPlainISOString() : null; }
+}
+
+// ============================================================ ChronoDate
+
+/**
+ * A **calendar date** - a year, a month and a day, with no time of day and no zone.
+ * The equivalent of `Temporal.PlainDate`.
+ *
+ * ```ts
+ * const d = ChronoDate.parse('2024-03-15');
+ * d.addDays(7).toISODate()        // '2024-03-22'
+ * d.addMonths(1).toISODate()      // '2024-04-15'
+ * ChronoDate.parse('2024-01-31').addMonths(1).toISODate()   // '2024-02-29', clamped
+ * ```
+ *
+ * **It has no `hour`, and no `addHours`.** That is the point of the type: a birthday, an
+ * invoice date or a hotel night is not a moment, and code that reads a time off one is
+ * asking a question the value cannot answer. To get a time, ask for one explicitly:
+ *
+ * ```ts
+ * d.toPlain()                     // ChronoPlain at 00:00 - the time is now 0, visibly
+ * d.atTime(14, 30)                // ChronoPlain at 14:30
+ * d.atStartOfDay('Europe/Bratislava')   // ChronoZoned - a real moment, DST-correct
+ * ```
+ *
+ * Stored as a **day index** (days since 1970-01-01), not a timestamp. A midnight timestamp
+ * in 2024 is ~1.7e12 and gets boxed by V8; a day index is ~19,800 and stays an immediate,
+ * so comparison, sorting and arithmetic all stay in integer registers.
+ */
+export class ChronoDate {
+  /** Days since 1970-01-01. Negative before it. */
+  readonly dayIndex: DayIndex;
+
+  /** Wraps a day index directly. Prefer {@link parse}, {@link of} or {@link now}. */
+  constructor(dayIndex: DayIndex | number) {
+    this.dayIndex = dayIndex as DayIndex;
+  }
+
+  /**
+   * Parse an ISO-8601 date. A bare time component is accepted and discarded
+   * (`'2024-03-15T10:30'` is 15 March), matching `Temporal.PlainDate.from`.
+   *
+   * **A trailing `Z` is rejected**, matching Temporal, and for a reason worth spelling
+   * out: `Z` says the string is a moment in UTC and carries no local clock, so which
+   * calendar day it lands on depends on a zone the string does not name.
+   * `'2024-03-15T23:30:00Z'` is 15 March in UTC but 16 March in Bratislava, so silently
+   * taking the UTC date would hand back the wrong day for half the world. An explicit
+   * offset like `'+01:00'` **is** accepted, because it still describes a local wall clock
+   * and the date as written is the date meant - again matching Temporal. To go from a
+   * moment to a date, say which zone decides:
+   *
+   * ```ts
+   * ChronoInstant.parse(s).inZone(tz).toPlainDate()
+   * ```
+   *
+   * Throws `InvalidInstantError` (a `RangeError`) on malformed input; see {@link tryParse}.
+   */
+  static parse(s: string): ChronoDate {
+    const wall = parseISOWall(s);
+    if (wall !== wall || hasUtcDesignator(s)) throw new InvalidInstantError(s);
+    return new ChronoDate(dayIndexOf(wall));
+  }
+
+  /** Like {@link parse}, but returns `null` instead of throwing. */
+  static tryParse(s: string): ChronoDate | null {
+    const wall = parseISOWall(s);
+    return wall !== wall || hasUtcDesignator(s) ? null : new ChronoDate(dayIndexOf(wall));
+  }
+
+  /**
+   * Build from calendar fields.
+   * @param m Month, **1-12** - January is 1, not 0.
+   */
+  static of(y: number, m: number, d: number): ChronoDate {
+    return new ChronoDate(unsafeDayIndex(daysFromCivil(y, m, d)));
+  }
+
+  /** Today's date in `tz`, or in the host zone when omitted. */
+  static now(tz?: TimeZoneId | string): ChronoDate {
+    const ms = unsafeEpochMs(Date.now());
+    const zoneId = checkedZone(tz === undefined ? Now.timeZoneId() : tz);
+    return new ChronoDate(dayIndexOf(ms + offsetAt(zoneId, ms)));
+  }
+
+  /** Comparator for `Array#sort`, earliest first. */
+  static compare(a: ChronoDate, b: ChronoDate): -1 | 0 | 1 {
+    return a.dayIndex < b.dayIndex ? -1 : a.dayIndex > b.dayIndex ? 1 : 0;
+  }
+
+  /** `false` if this was built from a NaN day index. */
+  get isValid(): boolean { return this.dayIndex === this.dayIndex; }
+
+  /** Calendar year. Negative before 1 CE. */
+  get year(): number { civilFromDays(this.dayIndex); return cY; }
+  /** Calendar month, **1-12** - January is 1, not 0. */
+  get month(): number { civilFromDays(this.dayIndex); return cM; }
+  /** Day of the month, **1-31**. */
+  get day(): number { civilFromDays(this.dayIndex); return cD; }
+  /** ISO day of week, **1-7** - Monday is 1, Sunday is 7. */
+  get dayOfWeek(): number { return dayOfWeekOfDay(this.dayIndex); }
+  /** Day of the year, **1-366**. */
+  get dayOfYear(): number { return dayOfYearOfDay(this.dayIndex); }
+  /** ISO-8601 week number, **1-53**. See {@link weekYear}. */
+  get weekOfYear(): number { return isoWeekOfDay(this.dayIndex); }
+  /** The year that owns {@link weekOfYear}, which near New Year is not {@link year}. */
+  get weekYear(): number { return isoWeekYearOfDay(this.dayIndex); }
+  /** Days in this date's month, **28-31**. */
+  get daysInMonth(): number { civilFromDays(this.dayIndex); return daysInMonthRaw(cY, cM); }
+  /** Days in this date's year, 365 or 366. */
+  get daysInYear(): number { civilFromDays(this.dayIndex); return isLeapYearRaw(cY) ? 366 : 365; }
+  /** Whether this date's year is a leap year. */
+  get inLeapYear(): boolean { civilFromDays(this.dayIndex); return isLeapYearRaw(cY); }
+
+  /** Year, month and day from a single civil conversion. Cheaper than three getters. */
+  fields(): { year: number; month: number; day: number } {
+    civilFromDays(this.dayIndex);
+    return { year: cY, month: cM, day: cD };
+  }
+
+  /** Add `n` days. One integer add - no calendar conversion at all. */
+  addDays(n: number): ChronoDate { return new ChronoDate(unsafeDayIndex(this.dayIndex + n)); }
+  /** Add `n * 7` days. */
+  addWeeks(n: number): ChronoDate { return new ChronoDate(unsafeDayIndex(this.dayIndex + n * 7)); }
+  /** Add `n` calendar months, **clamping to the end of the target month**. */
+  addMonths(n: number): ChronoDate {
+    return new ChronoDate(unsafeDayIndex(addMonthsOfDay(this.dayIndex, n)));
+  }
+  /** Add `n` calendar years. 29 Feb + 1 year is 28 Feb. */
+  addYears(n: number): ChronoDate {
+    return new ChronoDate(unsafeDayIndex(addMonthsOfDay(this.dayIndex, n * 12)));
+  }
+
+  /** The first day of this month. */
+  startOfMonth(): ChronoDate {
+    return new ChronoDate(unsafeDayIndex(startOfMonthOfDay(this.dayIndex)));
+  }
+  /** The last day of this month. */
+  endOfMonth(): ChronoDate {
+    return new ChronoDate(unsafeDayIndex(endOfMonthOfDay(this.dayIndex)));
+  }
+  /** 1 January of this year. */
+  startOfYear(): ChronoDate {
+    return new ChronoDate(unsafeDayIndex(startOfYearOfDay(this.dayIndex)));
+  }
+  /** @param firstDay 1 = Monday (the ISO default), 7 = Sunday. */
+  startOfWeek(firstDay = 1): ChronoDate {
+    return new ChronoDate(unsafeDayIndex(startOfWeekOfDay(this.dayIndex, firstDay)));
+  }
+
+  /** Whole days from this date to `other`. Negative if `other` is earlier. One subtract. */
+  daysUntil(other: ChronoDate): number { return other.dayIndex - this.dayIndex; }
+  /** Whole weeks from this date to `other`, truncated toward zero. */
+  weeksUntil(other: ChronoDate): number { return ((other.dayIndex - this.dayIndex) / 7) | 0; }
+  /** Whole calendar months from this date to `other`, truncated toward zero. */
+  monthsUntil(other: ChronoDate): number {
+    return diffMonthsOfDay(this.dayIndex, other.dayIndex);
+  }
+  /** Whole calendar years from this date to `other`, truncated toward zero. */
+  yearsUntil(other: ChronoDate): number {
+    return (diffMonthsOfDay(this.dayIndex, other.dayIndex) / 12) | 0;
+  }
+
+  /** Same calendar date. */
+  equals(other: ChronoDate): boolean { return this.dayIndex === other.dayIndex; }
+  /** Strictly earlier than `other`. */
+  isBefore(other: ChronoDate): boolean { return this.dayIndex < other.dayIndex; }
+  /** Strictly later than `other`. */
+  isAfter(other: ChronoDate): boolean { return this.dayIndex > other.dayIndex; }
+
+  /**
+   * This date at **00:00**, as a wall-clock reading. The time is zero, and now visibly so.
+   * @param h Hour, 0-23. Defaults to midnight; see also {@link atTime}.
+   */
+  toPlain(h = 0, mi = 0, s = 0, msec = 0): ChronoPlain {
+    return new ChronoPlain(unsafeWallMs(
+      this.dayIndex * MS_DAY + h * 3_600_000 + mi * 60_000 + s * 1000 + msec));
+  }
+
+  /** This date at a given wall-clock time. `d.atTime(14, 30)` reads 14:30 on that date. */
+  atTime(h: number, mi = 0, s = 0, msec = 0): ChronoPlain {
+    return this.toPlain(h, mi, s, msec);
+  }
+
+  /**
+   * The first moment of this date in `tz` - an actual instant, so DST is applied. On a
+   * spring-forward day where midnight does not exist this is 01:00, not 00:00.
+   */
+  atStartOfDay(tz: TimeZoneId | string, disambiguation: Disambiguation = 'compatible'): ChronoZoned {
+    const zoneId = checkedZone(tz);
+    // The day index is a LOCAL date, so it names a wall clock, not an instant. Feeding
+    // `dayIndex * MS_DAY` to startOfDayZoned as if it were UTC lands in the previous day
+    // for every zone west of Greenwich.
+    return new ChronoZoned(
+      utcFromWall(zoneId, unsafeWallMs(this.dayIndex * MS_DAY), disambiguation), zoneId);
+  }
+
+  /** `YYYY-MM-DD`. Identical to `Temporal.PlainDate#toString()`. */
+  toISODate(): string { return isoDateOfDay(this.dayIndex); }
+  /** Same as {@link toISODate}, but yields `'Invalid Date'` instead of throwing. */
+  toString(): string {
+    return this.dayIndex === this.dayIndex ? isoDateOfDay(this.dayIndex) : 'Invalid Date';
+  }
+  /** Serialises as `YYYY-MM-DD`; an invalid date serialises to `null`, like `Date`. */
+  toJSON(): string | null {
+    return this.dayIndex === this.dayIndex ? isoDateOfDay(this.dayIndex) : null;
+  }
+
+  /**
+   * Locale-aware text, through `Intl`. The date is rendered **exactly as written**; a `timeZone` option is ignored, as it
+   * is on `Temporal.PlainDate#toLocaleString`.
+   *
+   * ```ts
+   * d.toLocaleDateString('sk-SK')                              // '2. 9. 2026'
+   * d.toLocaleDateString('sk-SK', { month: 'long', day: 'numeric', year: 'numeric' })
+   * //  '2. septembra 2026'
+   * ```
+   *
+   * Formatters are cached, so a repeated call costs ~1.2us rather than the ~46us of
+   * building one. Without this method the call would silently resolve to
+   * `Object.prototype.toLocaleString`, which ignores the locale and returns the ISO string.
+   */
+  toLocaleString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
+    return formatLocale(this.dayIndex * MS_DAY, 'UTC', locales, options, 1);
+  }
+  /** Date only, in the caller's locale. */
+  toLocaleDateString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
+    return formatLocale(this.dayIndex * MS_DAY, 'UTC', locales, options, 1);
+  }
+  /** Time only, in the caller's locale. */
+  toLocaleTimeString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
+    return formatLocale(this.dayIndex * MS_DAY, 'UTC', locales, options, 2);
+  }
+
+  /** The day index, so `<`, `>` and `-` work between dates. `b - a` is whole days. */
+  valueOf(): number { return this.dayIndex; }
 }
 
 // ============================================================ ChronoZoned
@@ -599,6 +904,15 @@ export class ChronoZoned {
 
   /** Local ISO-8601 with offset, e.g. `2024-03-15T11:30:00.123+01:00`. No zone id. */
   toISOString(): string { return formatZoned(this.tz, this.ms); }
+  /**
+   * The **local** calendar date in this zone, as a {@link ChronoDate}. This is the correct
+   * way to turn a moment into a date: which day an instant falls on is a question only a
+   * zone can answer, and this one has it.
+   */
+  toPlainDate(): ChronoDate {
+    return new ChronoDate(dayIndexOf(this.ms + offsetAt(this.tz, this.ms)));
+  }
+
   /** Local `YYYY-MM-DD`, which can differ from the UTC date. */
   toISODate(): string { return toZonedISODate(this.tz, this.ms); }
   /**
@@ -613,6 +927,31 @@ export class ChronoZoned {
    * An invalid moment serialises to `null`, matching `Date#toJSON()`.
    */
   toJSON(): string | null { return this.ms === this.ms ? formatZoned(this.tz, this.ms) : null; }
+
+  /**
+   * Locale-aware text, through `Intl`. Rendered in **this value's own zone**, so `timeZoneName` options resolve correctly.
+   *
+   * ```ts
+   * z.toLocaleString('sk-SK')                                  // '2. 9. 2026 14:30:00'
+   * z.toLocaleString('sk-SK', { timeZoneName: 'short' })       // '... SELC'
+   * ```
+   *
+   * Formatters are cached, so a repeated call costs ~1.2us rather than the ~46us of
+   * building one. Without this method the call would silently resolve to
+   * `Object.prototype.toLocaleString`, which ignores the locale and returns the ISO string.
+   */
+  toLocaleString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
+    return formatLocale(this.ms, this.tz, locales, options, 3);
+  }
+  /** Date only, in the caller's locale. */
+  toLocaleDateString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
+    return formatLocale(this.ms, this.tz, locales, options, 1);
+  }
+  /** Time only, in the caller's locale. */
+  toLocaleTimeString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
+    return formatLocale(this.ms, this.tz, locales, options, 2);
+  }
+
   /** The epoch milliseconds, so `<`, `>` and `-` compare moments across zones. */
   valueOf(): number { return this.ms; }
 }

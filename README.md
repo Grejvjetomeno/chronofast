@@ -168,36 +168,116 @@ lines it is the whole story, and it shows up in the p99 as GC pauses.
 
 ## API
 
-Two immutable classes. Every method returns a new instance; nothing mutates.
+Four immutable types. Every method returns a new instance; nothing mutates.
+
+|  | has a moment? | has calendar fields? | carries a zone? |
+|---|:-:|:-:|:-:|
+| `ChronoInstant` | yes | — | — |
+| `ChronoPlain` | — | yes | — |
+| `ChronoDate` | — | date only | — |
+| `ChronoZoned` | yes | yes | yes |
+
+The gaps are enforced, not merely documented. `ChronoInstant` has no `hour`; `ChronoPlain`
+has no `epochMilliseconds`; `ChronoDate` has no `addHours`. Reading a field a value cannot
+answer is a `TypeError` in JavaScript and a compile error in TypeScript, rather than a
+plausible-looking wrong number.
 
 ### `ChronoInstant` — a point on the UTC timeline
 
 ```ts
-ChronoInstant.parse('2024-03-15T10:30:00.000Z')
-ChronoInstant.fromEpochMs(1710498600000)   // throws InvalidInstantError if not finite
+ChronoInstant.parse('2024-03-15T10:30:00.000Z')   // throws on malformed input
+ChronoInstant.tryParse(untrusted)                 // null instead of throwing
+ChronoInstant.fromEpochMs(1710498600000)          // throws if not a finite instant
 ChronoInstant.fromDate(new Date())
-ChronoInstant.now()
+ChronoInstant.now()                               // UTC — see "Reading now" below
 ```
 
 | | |
 |---|---|
-| **Fields** (UTC) | `year` `month` `day` `hour` `minute` `second` `millisecond` |
-| | `dayOfWeek` (1 = Mon … 7 = Sun) `dayOfYear` `weekOfYear` `weekYear` |
-| | `fields()` — all seven from a single conversion |
-| **Arithmetic** | `addMilliseconds` `addSeconds` `addMinutes` `addHours` `addDays` `addWeeks` `addMonths` `addYears` |
-| **Truncation** | `startOfMinute` `startOfHour` `startOfDay` `startOfWeek` `startOfMonth` `startOfYear` |
-| **Compare** | `equals` `isBefore` `isAfter` `daysUntil` `monthsUntil` `ChronoInstant.compare` |
-| **Output** | `toISOString()` `toISODate()` `toDate()` `toJSON()` `epochMilliseconds` |
-| **Convert** | `inZone(tz)` — same instant &nbsp;·&nbsp; `asLocalIn(tz)` — same reading |
+| **Value** | `epochMilliseconds` `isValid` `valueOf()` |
+| **Arithmetic** | `addMilliseconds` `addSeconds` `addMinutes` `addHours` `addDays` |
+| **Difference** | `millisecondsUntil` `secondsUntil` `minutesUntil` `hoursUntil` `daysUntil` |
+| **Compare** | `equals` `isBefore` `isAfter` `ChronoInstant.compare` |
+| **Convert** | `inZone(tz)` → `ChronoZoned` &nbsp;·&nbsp; `toUtcPlain()` → `ChronoPlain` &nbsp;·&nbsp; `toDate()` |
+| **Output** | `toISOString()` `toISODate()` `toJSON()` `toString()` `toLocaleString()` |
 
-Month arithmetic clamps to the end of the month and is leap-aware:
+**It has no calendar fields and no month arithmetic.** A moment is not a date until a zone
+reads it, so `.year`, `.hour` and `.addMonths` are absent by design:
 
 ```ts
-ChronoInstant.parse('2024-01-31T00:00:00.000Z').addMonths(1).toISODate()  // '2024-02-29'
-ChronoInstant.parse('2023-01-31T00:00:00.000Z').addMonths(1).toISODate()  // '2023-02-28'
+const t = ChronoInstant.parse('2024-03-15T10:30:00.000Z');
+
+t.toUtcPlain().year                  // 2024   — the UTC reading, asked for by name
+t.inZone('Asia/Tokyo').hour          // 19     — the Tokyo reading
 ```
 
-### `ChronoZoned` — the same instant, read through an IANA zone
+### `ChronoPlain` — a wall-clock reading, with no zone
+
+The equivalent of `Temporal.PlainDateTime`. What a clock said, with nothing claiming which
+clock.
+
+```ts
+ChronoPlain.parse('2024-03-15T10:30:00')
+ChronoPlain.of(2024, 3, 15, 10, 30)      // month is 1-based
+ChronoPlain.now()                        // the local wall clock
+```
+
+| | |
+|---|---|
+| **Fields** | `year` `month` `day` `hour` `minute` `second` `millisecond` |
+| | `dayOfWeek` (1 = Mon … 7 = Sun) `dayOfYear` `weekOfYear` `weekYear` |
+| | `fields()` — all seven from a single conversion |
+| **Arithmetic** | `addMilliseconds` … `addHours` `addDays` `addWeeks` `addMonths` `addYears` |
+| **Truncation** | `startOfMinute` `startOfHour` `startOfDay` `startOfWeek` `startOfMonth` `startOfYear` |
+| **Difference** | `millisecondsUntil` `minutesUntil` `hoursUntil` `daysUntil` `monthsUntil` |
+| **Convert** | `assumeZone(tz)` → `ChronoZoned` &nbsp;·&nbsp; `toPlainDate()` → `ChronoDate` |
+| **Output** | `toPlainISOString()` `toISODate()` `toJSON()` `toLocaleString()` |
+
+Month arithmetic clamps to the end of the target month and is leap-aware:
+
+```ts
+ChronoPlain.parse('2024-01-31T00:00').addMonths(1).toISODate()   // '2024-02-29'
+ChronoPlain.parse('2023-01-31T00:00').addMonths(1).toISODate()   // '2023-02-28'
+```
+
+It has **no `toISOString()`**, because there is no offset to put after the time. Use
+`toPlainISOString()`, which emits what `Temporal.PlainDateTime#toString()` emits.
+
+### `ChronoDate` — a calendar date, with no time at all
+
+The equivalent of `Temporal.PlainDate`. A birthday, an invoice date, a hotel night.
+
+```ts
+ChronoDate.parse('2024-03-15')
+ChronoDate.of(2024, 3, 15)
+ChronoDate.now('Europe/Bratislava')      // today, in that zone
+```
+
+| | |
+|---|---|
+| **Fields** | `year` `month` `day` `dayOfWeek` `dayOfYear` `weekOfYear` `weekYear` |
+| | `daysInMonth` `daysInYear` `inLeapYear` `fields()` |
+| **Arithmetic** | `addDays` `addWeeks` `addMonths` `addYears` |
+| **Truncation** | `startOfWeek` `startOfMonth` `startOfYear` `endOfMonth` |
+| **Difference** | `daysUntil` `weeksUntil` `monthsUntil` `yearsUntil` |
+| **Convert** | `toPlain(h, mi, s, ms)` &nbsp;·&nbsp; `atTime(h, mi)` &nbsp;·&nbsp; `atStartOfDay(tz)` |
+| **Output** | `toISODate()` `toJSON()` `toLocaleDateString()` `dayIndex` |
+
+**No `hour`, no `addHours`.** Getting to a time is something you say out loud:
+
+```ts
+const d = ChronoDate.parse('2024-03-15');
+
+d.toPlain()                              // ChronoPlain at 00:00
+d.atTime(14, 30)                         // ChronoPlain at 14:30
+d.atStartOfDay('Europe/Bratislava')      // ChronoZoned — a real moment, DST-correct
+d.addDays(7).toISODate()                 // '2024-03-22'
+```
+
+It is stored as a day index rather than a timestamp, so `b - a` is whole days and sorting
+compares small integers.
+
+### `ChronoZoned` — a moment, read through an IANA zone
 
 ```ts
 ChronoZoned.parse('2024-03-15T10:30:00Z', 'Europe/Bratislava')
@@ -205,8 +285,9 @@ ChronoZoned.fromEpochMs(1710498600000, 'America/New_York')
 ChronoZoned.fromLocal('Europe/Bratislava', 2024, 3, 15, 11, 30)
 ```
 
-Same field and output surface as `ChronoInstant`, read in local time, plus `offset`,
-`offsetHours`, `withZone(tz)`, `withZoneSameLocal(tz)`, `toInstant()` and `toPlain()`.
+Carries both surfaces — every field of `ChronoPlain` plus `epochMilliseconds` — and adds
+`offset` (milliseconds), `offsetHours`, `withZone(tz)`, `withZoneSameLocal(tz)`,
+`toInstant()`, `toPlain()`, `toPlainDate()` and `startOfDay()`.
 
 The distinction that matters is between **exact-time** and **calendar** units:
 
@@ -217,8 +298,8 @@ z.addHours(24)   // exactly 24 hours later
 z.addDays(1)     // the same wall-clock time tomorrow — 23 hours, because DST starts
 ```
 
-`addDays`, `addMonths`, `addYears` and `startOfDay` all resolve through local wall time, so
-they do what a calendar says rather than what a stopwatch says.
+`addDays`, `addMonths`, `addYears` and `startOfDay` resolve through local wall time, so they
+do what a calendar says rather than what a stopwatch says.
 
 ### Reading "now" — say which clock you mean
 
@@ -229,10 +310,10 @@ and anything near midnight lands on the wrong day. So chronofast makes you say w
 ```ts
 import { Now } from 'chronofast';
 
-Now.instant()               // the moment; its fields read in UTC     -> 07:07
-Now.plainDateTimeISO()      // the local wall clock, no zone attached -> 09:07
-Now.zonedDateTimeISO()      // the local wall clock, carrying its zone -> 09:07+02:00
-Now.plainDateISO()          // today's LOCAL date, at midnight
+Now.instant()               // the moment, no fields              -> 07:07 in UTC terms
+Now.plainDateTimeISO()      // the local wall clock, no zone       -> 09:07
+Now.zonedDateTimeISO()      // the local wall clock, with its zone -> 09:07+02:00
+Now.plainDateISO()          // today's local date, at midnight
 Now.timeZoneId()            // 'Europe/Bratislava'
 Now.minutesSinceMidnight()  // 547
 ```
@@ -240,15 +321,16 @@ Now.minutesSinceMidnight()  // 547
 Every method takes an optional zone and defaults to the system one. The names mirror
 `Temporal.Now` on purpose, so migrating is a rename.
 
-`ChronoInstant.now()` still exists and is still UTC — correct for storage, comparison and
-audit trails, wrong for anything a user reads.
+Two things to know. `ChronoInstant.now()` is still UTC — correct for storage, comparison and
+audit trails, wrong for anything a user reads. And `Now.plainDateISO()` returns a
+`ChronoPlain` pinned to midnight, not a `ChronoDate`; for a value that cannot carry a time
+at all, use `ChronoDate.now(tz)`.
 
-A value that is a wall-clock reading should be serialised with `toPlainISOString()`, which
-omits the `Z` rather than claiming an offset the value does not have:
+A wall-clock reading serialises with `toPlainISOString()`, which omits the `Z` rather than
+claiming an offset the value does not have:
 
 ```ts
-Now.plainDateTimeISO().toISOString()        // '2026-09-02T09:07:00.000Z'  <- lies
-Now.plainDateTimeISO().toPlainISOString()   // '2026-09-02T09:07:00'       <- honest
+Now.plainDateTimeISO().toPlainISOString()   // '2026-09-02T09:07:00'   honest
 ```
 
 ### Field numbering is human, not `Date`-style
@@ -265,7 +347,7 @@ Now.plainDateTimeISO().toPlainISOString()   // '2026-09-02T09:07:00'       <- ho
 | `weekOfYear` | 1–53 | ISO-8601; see `weekYear` |
 
 ```ts
-ChronoInstant.parse('2024-09-01T00:00:00Z').month   // 9, not 8
+ChronoPlain.parse('2024-09-01T00:00').month   // 9, not 8
 ```
 
 If you need `Date`'s Sunday-first numbering for interop, it exists under a name that cannot
@@ -291,50 +373,52 @@ database field:
 ChronoZoned.parse('2000-09-01T10:00', 'Europe/Bratislava').toISOString()
 // '2000-09-01T10:00:00.000+02:00'   — stays 10:00, resolves to 08:00Z
 
-ChronoZoned.fromLocal('Europe/Bratislava', 2000, 9, 1, 10, 0)   // same, from components
-ChronoInstant.parse('2000-09-01T10:00').asLocalIn('Europe/Bratislava')   // same, from an instant
+ChronoZoned.fromLocal('Europe/Bratislava', 2000, 9, 1, 10, 0)          // from components
+ChronoPlain.parse('2000-09-01T10:00').assumeZone('Europe/Bratislava')  // from a reading
 ```
 
 The offset comes from the tz database for *that date*, so January gives `+01:00` and
 September `+02:00` without you encoding a DST rule anywhere.
 
-**A string that carries a designator is an exact instant**, and the zone only affects how
-it is displayed:
+**A string that carries a designator is an exact instant**, and the zone only affects how it
+is displayed:
 
 ```ts
 ChronoZoned.parse('2000-09-01T10:00:00Z', 'Europe/Bratislava').toISOString()
 // '2000-09-01T12:00:00.000+02:00'   — a designator means you already said which moment
 ```
 
-So `parse` reads the string, not your intent: `Z` or `±HH:mm` means an instant, nothing
-means a local reading, and a date-only string means local midnight.
+So `ChronoZoned.parse` reads the string, not your intent: `Z` or `±HH:mm` means an instant,
+nothing means a local reading, and a date-only string means local midnight.
 
-### The two conversions, which are easy to confuse
+### The conversions, which are easy to confuse
 
-| | instant | wall-clock reading |
+| | the moment | the wall-clock reading |
 |---|---|---|
-| `t.inZone(tz)` | unchanged | **moves** |
-| `t.asLocalIn(tz)` | **moves** | unchanged |
-| `z.withZone(tz)` | unchanged | **moves** |
-| `z.withZoneSameLocal(tz)` | **moves** | unchanged |
+| `instant.inZone(tz)` | unchanged | **moves** |
+| `plain.assumeZone(tz)` | **set** | unchanged |
+| `zoned.withZone(tz)` | unchanged | **moves** |
+| `zoned.withZoneSameLocal(tz)` | **moves** | unchanged |
 
 ```ts
 const t = ChronoInstant.parse('2000-09-01T10:00:00.000Z');
 
-t.inZone('Europe/Bratislava').toISOString()     // '...T12:00:00.000+02:00'  same moment
-t.asLocalIn('Europe/Bratislava').toISOString()  // '...T10:00:00.000+02:00'  same reading
+t.inZone('Europe/Bratislava').toISOString()
+// '2000-09-01T12:00:00.000+02:00'   same moment, read locally
+
+t.toUtcPlain().assumeZone('Europe/Bratislava').toISOString()
+// '2000-09-01T10:00:00.000+02:00'   same reading, given a zone
 ```
 
-`z.toPlain()` goes back the other way, returning the wall-clock reading as a UTC instant.
-
-Every one of these accepts a disambiguation mode for the two days a year when a local time
-is ambiguous or does not exist.
+`zoned.toPlain()` and `zoned.toPlainDate()` go the other way, dropping the zone and keeping
+the local reading. `assumeZone` and `atStartOfDay` accept a disambiguation mode for the two
+days a year when a local time is ambiguous or does not exist.
 
 ### Ambiguous and nonexistent local times
 
-A local time can happen twice (autumn) or never (spring). `fromLocal` resolves this with
-Temporal's `'compatible'` rule by default — earlier of an ambiguous pair, shifted forward
-across a gap — and accepts `'earlier'`, `'later'` or `'reject'`:
+A local time can happen twice (autumn) or never (spring). `fromLocal` and `assumeZone`
+resolve this with Temporal's `'compatible'` rule by default — earlier of an ambiguous pair,
+shifted forward across a gap — and accept `'earlier'`, `'later'` or `'reject'`:
 
 ```ts
 // 02:30 on 2024-03-31 does not exist in Bratislava; the clock jumps 02:00 -> 03:00

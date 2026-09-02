@@ -446,3 +446,84 @@ export function resetZoneCaches(): void {
   zDayVal = '';
   offStrCache.clear();
 }
+
+// ---------------------------------------------------------------- locale formatting
+//
+// `toLocaleString` on a class with no such method silently resolves to
+// `Object.prototype.toLocaleString`, which calls `toString()` and ignores both the locale
+// and the options. Nothing throws; every localised date in a UI just renders as an ISO
+// string. The methods below exist so that cannot happen.
+//
+// Constructing an `Intl.DateTimeFormat` per call costs ~46us. Reusing one costs ~1.2us, so
+// they are cached on (locale, options, zone). The cache is bounded: a UI uses a handful of
+// option shapes, but a caller building option objects in a loop must not be able to grow it
+// without limit.
+
+const FMT_CACHE = new Map<string, Intl.DateTimeFormat>();
+const FMT_CACHE_MAX = 256;
+
+/** ECMA-402's own defaults, spelled out so a cached formatter matches `Date`'s output. */
+const DEFAULT_DATE_TIME: Intl.DateTimeFormatOptions =
+  { year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric' };
+const DEFAULT_DATE: Intl.DateTimeFormatOptions =
+  { year: 'numeric', month: 'numeric', day: 'numeric' };
+const DEFAULT_TIME: Intl.DateTimeFormatOptions =
+  { hour: 'numeric', minute: 'numeric', second: 'numeric' };
+/** `Temporal.ZonedDateTime` names its zone by default; a moment with a zone should say so. */
+const DEFAULT_ZONED: Intl.DateTimeFormatOptions =
+  { ...DEFAULT_DATE_TIME, timeZoneName: 'short' };
+
+/**
+ * Format `ms` through a cached `Intl.DateTimeFormat`.
+ *
+ * @param tz The zone to render in. Zoneless types pass `'UTC'` and hand in a *wall-clock*
+ *   millisecond value, so the reading comes out exactly as written - the same thing
+ *   `Temporal.PlainDateTime#toLocaleString` does, including ignoring any `timeZone` the
+ *   caller supplied, because a reading with no zone has no moment to shift.
+ */
+export function formatLocale(
+  ms: number,
+  tz: string,
+  locales: string | string[] | undefined,
+  options: Intl.DateTimeFormatOptions | undefined,
+  kind: 0 | 1 | 2 | 3,
+): string {
+  if (ms !== ms) return 'Invalid Date';
+  const base = kind === 1 ? DEFAULT_DATE : kind === 2 ? DEFAULT_TIME
+             : kind === 3 ? DEFAULT_ZONED : DEFAULT_DATE_TIME;
+  const hasOwn = options !== undefined && hasDateTimeComponent(options);
+  const key = (locales === undefined ? '' : String(locales)) + '\u0000' + tz + '\u0000' +
+              String(kind) + '\u0000' + (options === undefined ? '' : JSON.stringify(options));
+
+  let fmt = FMT_CACHE.get(key);
+  if (fmt === undefined) {
+    // A caller-supplied component list replaces the defaults, exactly as `Intl` does when
+    // you pass one; otherwise the defaults fill in.
+    const opts: Intl.DateTimeFormatOptions =
+      options === undefined ? { ...base } : { ...(hasOwn ? {} : base), ...options };
+    opts.timeZone = tz;
+    fmt = new Intl.DateTimeFormat(locales, opts);
+    if (FMT_CACHE.size >= FMT_CACHE_MAX) FMT_CACHE.clear();
+    FMT_CACHE.set(key, fmt);
+  }
+  return fmt.format(ms);
+}
+
+/**
+ * Whether the caller named any date or time component, in which case the defaults step
+ * aside. This is ECMA-402's own `ToDateTimeOptions` list, and the omissions are deliberate:
+ * `timeZoneName` and `era` are *additions* to a format rather than a choice of components,
+ * so `{ timeZoneName: 'short' }` still gets the full default date and time beside it -
+ * which is what `Date#toLocaleString` does.
+ */
+function hasDateTimeComponent(o: Intl.DateTimeFormatOptions): boolean {
+  return o.dateStyle !== undefined || o.timeStyle !== undefined ||
+         o.year !== undefined || o.month !== undefined || o.day !== undefined ||
+         o.hour !== undefined || o.minute !== undefined || o.second !== undefined ||
+         o.weekday !== undefined || o.dayPeriod !== undefined ||
+         o.fractionalSecondDigits !== undefined;
+}
+
+/** How many formatters are cached. Diagnostics only. */
+export const localeFormatterCount = (): number => FMT_CACHE.size;

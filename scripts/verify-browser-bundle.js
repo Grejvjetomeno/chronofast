@@ -6,7 +6,7 @@ let fails = 0;
 const bad = (m) => { fails++; console.log('  FAIL ' + m); };
 
 const esm = await import('../browser/chronofast.min.js');
-const EXPECTED = ['AmbiguousTimeError', 'ChronoInstant', 'ChronoPlain', 'ChronoZoned',
+const EXPECTED = ['AmbiguousTimeError', 'ChronoDate', 'ChronoInstant', 'ChronoPlain', 'ChronoZoned',
                   'InvalidInstantError', 'Now', 'UnknownTimeZoneError'];
 const got = Object.keys(esm).sort();
 if (JSON.stringify(got) !== JSON.stringify(EXPECTED)) bad(`ESM exports: got [${got}]`);

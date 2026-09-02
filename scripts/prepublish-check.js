@@ -38,7 +38,7 @@ for (const [sub, def] of Object.entries(pkg.exports || {})) {
 
 // --- the public surface is what we say it is ---
 const api = await import('../lib/index.js');
-const EXPECTED = ['AmbiguousTimeError', 'ChronoInstant', 'ChronoPlain', 'ChronoZoned',
+const EXPECTED = ['AmbiguousTimeError', 'ChronoDate', 'ChronoInstant', 'ChronoPlain', 'ChronoZoned',
                   'InvalidInstantError', 'Now', 'UnknownTimeZoneError'];
 const actual = Object.keys(api).sort();
 check(JSON.stringify(actual) === JSON.stringify(EXPECTED),
@@ -107,6 +107,41 @@ check(!Now.plainDateTimeISO().toPlainISOString().includes('Z'), 'toPlainISOStrin
   check(M.ChronoInstant.parse('2024-03-15T10:30:00.123Z').toISOString() ===
         '2024-03-15T10:30:00.123Z',
         'well-formed input still parses unchanged');
+
+  // ChronoDate must stay a DATE. If it ever grows a time getter it has become a
+  // ChronoPlain wearing a different name, and the type-level guarantee is gone.
+  const d = M.ChronoDate.parse('2024-03-15');
+  check(['hour', 'minute', 'second', 'addHours', 'epochMilliseconds', 'toDate']
+          .every((f) => !(f in d)),
+        'ChronoDate carries no time-of-day capability');
+  check(d.toISODate() === '2024-03-15' && d.addDays(7).toISODate() === '2024-03-22' &&
+        M.ChronoDate.parse('2024-01-31').addMonths(1).toISODate() === '2024-02-29',
+        'ChronoDate arithmetic clamps like Temporal.PlainDate');
+  check(throwsRange(() => M.ChronoDate.parse('2024-03-15T10:30:00Z')),
+        'ChronoDate rejects a Z designator, as Temporal.PlainDate does');
+  check(M.ChronoDate.parse('2024-03-15T23:30:00-05:00').toISODate() === '2024-03-15',
+        'ChronoDate keeps the date as written when an offset is present');
+  check(M.ChronoPlain.parse('2024-03-15T23:30:00-05:00').toPlainISOString() ===
+        '2024-03-15T23:30:00',
+        'ChronoPlain keeps the wall clock as written rather than shifting it');
+
+  // toLocaleString must be DEFINED, not inherited. Object.prototype.toLocaleString exists
+  // on every object and delegates to toString(), so `typeof x.toLocaleString === 'function'`
+  // is true even when the method is missing - the failure is silent and renders ISO text
+  // into a localised UI.
+  for (const [name, obj] of [
+    ['ChronoInstant', M.ChronoInstant.parse('2026-09-02T12:30:00Z')],
+    ['ChronoPlain', M.ChronoPlain.parse('2026-09-02T14:30:00')],
+    ['ChronoZoned', M.ChronoInstant.parse('2026-09-02T12:30:00Z').inZone('Europe/Bratislava')],
+    ['ChronoDate', M.ChronoDate.parse('2026-09-02')],
+  ]) {
+    const proto = Object.getPrototypeOf(obj);
+    const own = Object.getOwnPropertyNames(proto);
+    check(['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString'].every((m) => own.includes(m)),
+          `${name} defines toLocale* rather than inheriting Object.prototype's`);
+    check(obj.toLocaleString('sk-SK') !== obj.toString(),
+          `${name}.toLocaleString actually localises instead of echoing the ISO string`);
+  }
 }
 
 check(Object.keys(pkg.dependencies || {}).length === 0, 'zero runtime dependencies');

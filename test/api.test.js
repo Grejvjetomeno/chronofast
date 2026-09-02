@@ -16,6 +16,7 @@ describe('public surface', () => {
   // point: it forces the decision to be explicit rather than incidental.
   const EXPECTED_EXPORTS = [
     'AmbiguousTimeError',
+    'ChronoDate',
     'ChronoInstant',
     'ChronoPlain',
     'ChronoZoned',
@@ -79,7 +80,9 @@ describe('ChronoInstant method surface', () => {
     'addDays', 'addHours', 'addMilliseconds', 'addMinutes', 'addSeconds',
     'constructor', 'daysUntil', 'equals', 'hoursUntil', 'inZone', 'isAfter', 'isBefore',
     'millisecondsUntil', 'minutesUntil', 'secondsUntil',
-    'toDate', 'toISODate', 'toISOString', 'toJSON', 'toString', 'toUtcPlain', 'valueOf',
+    'toDate', 'toISODate', 'toISOString', 'toJSON',
+    'toLocaleDateString', 'toLocaleString', 'toLocaleTimeString',
+    'toString', 'toUtcPlain', 'valueOf',
   ];
   const GETTERS = ['epochMilliseconds', 'isValid'];
 
