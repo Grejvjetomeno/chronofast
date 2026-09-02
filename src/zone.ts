@@ -19,7 +19,8 @@
 import type { EpochMs, WallMs, OffsetMs, TimeZoneId } from './brand.js';
 import { unsafeEpochMs, unsafeWallMs, unsafeOffsetMs } from './brand.js';
 import { MS_SEC, MS_MIN, MS_HOUR, MS_DAY, daysFromCivil, civilFromDays, unpack, daysInMonth,
-         pad2, pad3, pad4, year6, cY, cM, cD, cH, cMi, cS, cMs } from './core.js';
+         pad2, pad3, pad4, year6, isRepresentable,
+         cY, cM, cD, cH, cMi, cS, cMs } from './core.js';
 
 interface Run {
   readonly split: false;
@@ -36,6 +37,9 @@ interface Split {
   readonly after: number;
 }
 type Entry = Run | Split;
+
+const MIN_EPOCH_MS = -8.64e15;
+const MAX_EPOCH_MS = 8.64e15;
 
 /**
  * `timeZoneName: 'longOffset'` is ECMA-402 (2021): Chrome 95+, Firefox 91+, Safari 15.4+,
@@ -160,8 +164,12 @@ function offsetFallback(zc: Zone, utcMs: number): number {
 }
 
 function probeDay(zc: Zone, dayIdx: number): Entry {
-  const lo = dayIdx * MS_DAY;
-  const hi = lo + MS_DAY;
+  // The final representable instant starts a one-millisecond "day". Keep the cache's
+  // half-open interval while never handing Intl a value beyond the ECMAScript time range.
+  const dayLo = dayIdx * MS_DAY;
+  const lo = dayLo < MIN_EPOCH_MS ? MIN_EPOCH_MS : dayLo;
+  const dayHi = dayLo + MS_DAY;
+  const hi = dayHi > MAX_EPOCH_MS + 1 ? MAX_EPOCH_MS + 1 : dayHi;
   const o1 = rawOffset(zc, lo);
   const o2 = rawOffset(zc, hi - 1);
   if (o1 === o2) return { split: false, lo, hi, off: o1 };
@@ -176,6 +184,10 @@ function probeDay(zc: Zone, dayIdx: number): Entry {
 }
 
 function offsetSlow(zc: Zone, t: number): number {
+  // The endpoint-day clamp below must not turn an invalid value just outside the range
+  // into a cache hit. Keep this check off the hot path while preserving the public
+  // formatting contract: out-of-range values throw rather than becoming date-shaped text.
+  if (!(t >= MIN_EPOCH_MS && t <= MAX_EPOCH_MS)) throw new RangeError('Invalid time value');
   const dayIdx = Math.floor(t / MS_DAY);
   let e = zc.days.get(dayIdx);
 
@@ -265,8 +277,10 @@ export function utcFromWall(
   // zone scenarios (-10% on local midnight, -5% on add-a-local-day). Under scattered
   // access the runs are mostly single days, so the window rarely fits and the extra
   // compares are pure cost. Removed rather than kept on the theory that it should help.
-  const oB = offsetZ(zc, wallMs - MS_DAY);
-  const oA = offsetZ(zc, wallMs + MS_DAY);
+  const beforeProbe = wallMs - MS_DAY < MIN_EPOCH_MS ? MIN_EPOCH_MS : wallMs - MS_DAY;
+  const afterProbe = wallMs + MS_DAY > MAX_EPOCH_MS ? MAX_EPOCH_MS : wallMs + MS_DAY;
+  const oB = offsetZ(zc, beforeProbe);
+  const oA = offsetZ(zc, afterProbe);
   const u1 = wallMs - oB;
   if (oB === oA) return unsafeEpochMs(u1);
 
@@ -364,6 +378,7 @@ const year4or6 = (y: number): string => (y >= 0 && y <= 9999 ? pad4(y) : year6(y
  * offset-string cache lookup. Measured 16% faster.
  */
 export function formatZoned(tz: TimeZoneId | string, utcMs: EpochMs): string {
+  if (!isRepresentable(utcMs)) throw new RangeError('Invalid time value');
   const off = offsetAt(tz, utcMs);
   const wall = utcMs + off;
   const days = Math.floor(wall / MS_DAY);
@@ -401,6 +416,7 @@ let zDayVal = '';
 
 /** Local `YYYY-MM-DD` - the grouping key for "events per day in the user's zone". */
 export function toZonedISODate(tz: TimeZoneId | string, utcMs: EpochMs): string {
+  if (!isRepresentable(utcMs)) throw new RangeError('Invalid time value');
   const wallDay = Math.floor((utcMs + offsetAt(tz, utcMs)) / MS_DAY);
   if (wallDay === zDayIdx && tz === zDayTz) return zDayVal;
   civilFromDays(wallDay);
@@ -501,7 +517,7 @@ export function formatLocale(
   options: Intl.DateTimeFormatOptions | undefined,
   kind: 0 | 1 | 2 | 3,
 ): string {
-  if (ms !== ms) return 'Invalid Date';
+  if (!isRepresentable(ms)) return 'Invalid Date';
   const base = kind === 1 ? DEFAULT_DATE : kind === 2 ? DEFAULT_TIME
              : kind === 3 ? DEFAULT_ZONED : DEFAULT_DATE_TIME;
   const hasOwn = options !== undefined && hasDateTimeComponent(options);
