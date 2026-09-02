@@ -316,8 +316,12 @@ export function startOfDayZoned(tz: TimeZoneId | string, utcMs: EpochMs): EpochM
 }
 
 /** A calendar day in local time: 23 or 25 hours when it crosses a DST boundary. */
-export const addDaysZoned = (tz: TimeZoneId | string, utcMs: EpochMs, n: number): EpochMs =>
-  utcFromWall(tz, unsafeWallMs(utcMs + offsetAt(tz, utcMs) + n * MS_DAY));
+export function addDaysZoned(tz: TimeZoneId | string, utcMs: EpochMs, n: number): EpochMs {
+  // A zero date duration is exact-time addition in Temporal. Re-resolving the unchanged
+  // wall time would collapse the later occurrence of a fold to compatible/earlier.
+  if (n === 0) { zone(tz); return utcMs; }
+  return utcFromWall(tz, unsafeWallMs(utcMs + offsetAt(tz, utcMs) + n * MS_DAY));
+}
 
 /**
  * Add `n` calendar months in local time, keeping the wall-clock time and **clamping to the
@@ -325,6 +329,8 @@ export const addDaysZoned = (tz: TimeZoneId | string, utcMs: EpochMs, n: number)
  * a DST boundary is correct.
  */
 export function addMonthsZoned(tz: TimeZoneId | string, utcMs: EpochMs, n: number): EpochMs {
+  // As above, zero is exact-time addition and must not re-resolve a fold.
+  if (n === 0) { zone(tz); return utcMs; }
   const wall = utcMs + offsetAt(tz, utcMs);
   const days = Math.floor(wall / MS_DAY);
   const tod = wall - days * MS_DAY;

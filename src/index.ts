@@ -906,9 +906,18 @@ export class ChronoZoned {
   /**
    * Same wall-clock reading, in another zone. The reading is unchanged; the moment moves.
    * 09:00 in London becomes 09:00 in New York, five hours later.
+   * Omitting `disambiguation` while naming the current zone is an exact identity. Pass a
+   * mode explicitly to re-resolve an ambiguous reading in that zone.
    */
-  withZoneSameLocal(tz: TimeZoneId | string, disambiguation: Disambiguation = 'compatible'): ChronoZoned {
-    return this.toPlain().assumeZone(tz, disambiguation);
+  withZoneSameLocal(tz: TimeZoneId | string, disambiguation?: Disambiguation): ChronoZoned {
+    const zoneId = checkedZone(tz);
+    // Reinterpreting an unchanged reading in its current zone is an identity, including
+    // when this instant is the later occurrence of an ambiguous wall-clock time. IANA ids
+    // are case-insensitive, even though Intl preserves the caller's spelling here.
+    const sameZone = zoneId === this.tz || zoneId.toLowerCase() === this.tz.toLowerCase();
+    if (sameZone && disambiguation === undefined) return new ChronoZoned(this.ms, zoneId);
+    return new ChronoZoned(
+      utcFromWall(zoneId, this.toPlain().wall, disambiguation ?? 'compatible'), zoneId);
   }
 
   /** The moment, without the zone. */
