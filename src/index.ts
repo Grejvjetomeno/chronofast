@@ -795,7 +795,12 @@ export class ChronoZoned {
     if (ms !== ms) return null;
     const zoneId = checkedZone(tz);
     if (hasZoneDesignator(s)) return new ChronoZoned(ms, zoneId);
-    return new ChronoZoned(utcFromWall(zoneId, unsafeWallMs(ms), disambiguation), zoneId);
+    try {
+      return new ChronoZoned(utcFromWall(zoneId, unsafeWallMs(ms), disambiguation), zoneId);
+    } catch (error) {
+      if (error instanceof InvalidInstantError) return null;
+      throw error;
+    }
   }
 
   /** An exact moment, read through `tz`. Validates both arguments. */

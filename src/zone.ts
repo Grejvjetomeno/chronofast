@@ -17,7 +17,7 @@
 // the current IANA database. offsetAtUncached() is the assumption-free path.
 
 import type { EpochMs, WallMs, OffsetMs, TimeZoneId } from './brand.js';
-import { unsafeEpochMs, unsafeWallMs, unsafeOffsetMs } from './brand.js';
+import { InvalidInstantError, unsafeEpochMs, unsafeWallMs, unsafeOffsetMs } from './brand.js';
 import { MS_SEC, MS_MIN, MS_HOUR, MS_DAY, daysFromCivil, civilFromDays, unpack, daysInMonth,
          pad2, pad3, pad4, year6, cY, cM, cD, cH, cMi, cS, cMs } from './core.js';
 
@@ -36,6 +36,16 @@ interface Split {
   readonly after: number;
 }
 type Entry = Run | Split;
+
+const MIN_EPOCH_MS = -8.64e15;
+const MAX_EPOCH_MS = 8.64e15;
+
+const resolvedEpochMs = (ms: number): EpochMs => {
+  if (!(ms >= MIN_EPOCH_MS && ms <= MAX_EPOCH_MS)) {
+    throw new InvalidInstantError(ms);
+  }
+  return unsafeEpochMs(ms);
+};
 
 /**
  * `timeZoneName: 'longOffset'` is ECMA-402 (2021): Chrome 95+, Firefox 91+, Safari 15.4+,
@@ -90,7 +100,8 @@ function zone(tz: TimeZoneId | string): Zone {
   return z;
 }
 
-// [6] Read the offset out of a "…, GMT+01:00" tail. "GMT" alone means zero.
+// [6] Read the offset out of a "…, GMT+01:00" tail (optionally with seconds).
+// "GMT" alone means zero.
 function rawOffset(zc: Zone, utcMs: number): number {
   zc.intlCalls++;
   if (zc.offFmt === null) return offsetFallback(zc, utcMs);
@@ -160,8 +171,12 @@ function offsetFallback(zc: Zone, utcMs: number): number {
 }
 
 function probeDay(zc: Zone, dayIdx: number): Entry {
-  const lo = dayIdx * MS_DAY;
-  const hi = lo + MS_DAY;
+  // The final representable instant starts a one-millisecond "day". Keep the cache's
+  // half-open interval while never handing Intl a value beyond the ECMAScript time range.
+  const dayLo = dayIdx * MS_DAY;
+  const lo = dayLo < MIN_EPOCH_MS ? MIN_EPOCH_MS : dayLo;
+  const dayHi = dayLo + MS_DAY;
+  const hi = dayHi > MAX_EPOCH_MS + 1 ? MAX_EPOCH_MS + 1 : dayHi;
   const o1 = rawOffset(zc, lo);
   const o2 = rawOffset(zc, hi - 1);
   if (o1 === o2) return { split: false, lo, hi, off: o1 };
@@ -176,6 +191,10 @@ function probeDay(zc: Zone, dayIdx: number): Entry {
 }
 
 function offsetSlow(zc: Zone, t: number): number {
+  // The endpoint-day clamp below must not turn an invalid value just outside the range
+  // into a cache hit. Keep this check off the hot path while preserving the public
+  // formatting contract: out-of-range values throw rather than becoming date-shaped text.
+  if (!(t >= MIN_EPOCH_MS && t <= MAX_EPOCH_MS)) throw new RangeError('Invalid time value');
   const dayIdx = Math.floor(t / MS_DAY);
   let e = zc.days.get(dayIdx);
 
@@ -265,10 +284,12 @@ export function utcFromWall(
   // zone scenarios (-10% on local midnight, -5% on add-a-local-day). Under scattered
   // access the runs are mostly single days, so the window rarely fits and the extra
   // compares are pure cost. Removed rather than kept on the theory that it should help.
-  const oB = offsetZ(zc, wallMs - MS_DAY);
-  const oA = offsetZ(zc, wallMs + MS_DAY);
+  const beforeProbe = wallMs - MS_DAY < MIN_EPOCH_MS ? MIN_EPOCH_MS : wallMs - MS_DAY;
+  const afterProbe = wallMs + MS_DAY > MAX_EPOCH_MS ? MAX_EPOCH_MS : wallMs + MS_DAY;
+  const oB = offsetZ(zc, beforeProbe);
+  const oA = offsetZ(zc, afterProbe);
   const u1 = wallMs - oB;
-  if (oB === oA) return unsafeEpochMs(u1);
+  if (oB === oA) return resolvedEpochMs(u1);
 
   const v1 = offsetZ(zc, u1) === oB;
   const u2 = wallMs - oA;
@@ -278,12 +299,12 @@ export function utcFromWall(
     if (disambiguation === 'reject') throw new AmbiguousTimeError(wallMs, zc.id);
     const earlier = u1 < u2 ? u1 : u2;
     const later = u1 < u2 ? u2 : u1;
-    return unsafeEpochMs(disambiguation === 'later' ? later : earlier);
+    return resolvedEpochMs(disambiguation === 'later' ? later : earlier);
   }
-  if (v1) return unsafeEpochMs(u1);
-  if (v2) return unsafeEpochMs(u2);
+  if (v1) return resolvedEpochMs(u1);
+  if (v2) return resolvedEpochMs(u2);
   if (disambiguation === 'reject') throw new AmbiguousTimeError(wallMs, zc.id);
-  return unsafeEpochMs(disambiguation === 'earlier' ? wallMs - oA : u1);
+  return resolvedEpochMs(disambiguation === 'earlier' ? wallMs - oA : u1);
 }
 
 /** Write local wall-clock fields into the core scratch slots. Zero allocation. */
@@ -347,10 +368,13 @@ function offsetString(off: number): string {
   const hit = offStrCache.get(off);
   if (hit !== undefined) return hit;
   const a = off < 0 ? -off : off;
-  const mins = Math.floor(a / MS_MIN);
-  const s = (off < 0 ? '-' : '+') + pad2((mins / 60) | 0) + ':' + pad2(mins % 60);
-  offStrCache.set(off, s);
-  return s;
+  const totalSeconds = Math.floor(a / MS_SEC);
+  const mins = (totalSeconds / 60) | 0;
+  const seconds = totalSeconds % 60;
+  let text = (off < 0 ? '-' : '+') + pad2((mins / 60) | 0) + ':' + pad2(mins % 60);
+  if (seconds !== 0) text += ':' + pad2(seconds);
+  offStrCache.set(off, text);
+  return text;
 }
 
 // Shared with core rather than reimplemented: the two had drifted, one using padStart and
@@ -370,7 +394,7 @@ export function formatZoned(tz: TimeZoneId | string, utcMs: EpochMs): string {
   let rem = wall - days * MS_DAY;
   civilFromDays(days);
   const y = cY;
-  if (y < 0 || y > 9999) {                       // rare, keep the readable path
+  if (y < 0 || y > 9999 || Math.abs(off) % MS_MIN !== 0) { // rare, keep the readable path
     unpack(wall);
     return year4or6(cY) + '-' + pad2(cM) + '-' + pad2(cD) + 'T' +
            pad2(cH) + ':' + pad2(cMi) + ':' + pad2(cS) + '.' + pad3(cMs) + offsetString(off);
@@ -457,6 +481,11 @@ export function resetZoneCaches(): void {
   zDayTz = null;
   zDayVal = '';
   offStrCache.clear();
+  if (fallbackFmt !== null) {
+    fallbackFmt.clear();
+    fallbackFmt = null;
+  }
+  FMT_CACHE.clear();
 }
 
 // ---------------------------------------------------------------- locale formatting
