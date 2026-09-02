@@ -44,9 +44,16 @@ const MAX_EPOCH_MS = 8.64e15; // the ECMAScript time-value limit
 
 /** Thrown when a value cannot be an instant: NaN, Infinity, or outside +-8.64e15 ms. */
 export class InvalidInstantError extends RangeError {
-  /** @param value The number that could not be an instant. */
-  constructor(value: number) {
-    super(`Not a valid instant: ${value}`);
+  /**
+   * @param value The number, or the string, that could not be an instant.
+   *
+   * Extends `RangeError` so that `catch (e) { if (e instanceof RangeError) ... }` written
+   * against `Temporal` keeps working unchanged.
+   */
+  constructor(value: number | string) {
+    super(typeof value === 'string'
+      ? `Cannot parse as ISO-8601: ${JSON.stringify(value)}`
+      : `Not a valid instant: ${value}`);
     this.name = 'InvalidInstantError';
   }
 }

@@ -98,7 +98,7 @@ describe('ChronoInstant method surface', () => {
   test('statics are exactly as documented', () => {
     const names = Object.getOwnPropertyNames(ChronoInstant)
       .filter((n) => !['length', 'name', 'prototype'].includes(n));
-    assert.deepEqual(names.sort(), ['compare', 'fromDate', 'fromEpochMs', 'now', 'parse']);
+    assert.deepEqual(names.sort(), ['compare', 'fromDate', 'fromEpochMs', 'now', 'parse', 'tryParse']);
   });
 
   test('a moment exposes no calendar field at runtime either', () => {
@@ -137,7 +137,7 @@ describe('ChronoPlain method surface', () => {
   test('statics are exactly as documented', () => {
     const names = Object.getOwnPropertyNames(ChronoPlain)
       .filter((n) => !['length', 'name', 'prototype'].includes(n));
-    assert.deepEqual(names.sort(), ['compare', 'now', 'of', 'parse']);
+    assert.deepEqual(names.sort(), ['compare', 'now', 'of', 'parse', 'tryParse']);
   });
 
   test('instances carry a single own field, named so it cannot pass for a timestamp', () => {
@@ -149,7 +149,7 @@ describe('ChronoZoned method surface', () => {
   test('statics are exactly as documented', () => {
     const names = Object.getOwnPropertyNames(ChronoZoned)
       .filter((n) => !['length', 'name', 'prototype'].includes(n));
-    assert.deepEqual(names.sort(), ['compare', 'fromEpochMs', 'fromLocal', 'now', 'parse']);
+    assert.deepEqual(names.sort(), ['compare', 'fromEpochMs', 'fromLocal', 'now', 'parse', 'tryParse']);
   });
 
   test('instances carry exactly two own fields', () => {

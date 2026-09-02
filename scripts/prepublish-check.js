@@ -80,6 +80,35 @@ check(Now.plainDateISO().toISODate() === wall.slice(0, 10), 'Now.plainDateISO() 
 check(!Now.plainDateTimeISO().toPlainISOString().includes('Z'), 'toPlainISOString() emits no Z');
 
 // --- no runtime dependencies ---
+// --- the parsing doors must fail CLOSED ---
+// This is a safety property, not a style preference. `parse` once returned a NaN-carrying
+// instance on malformed input, and NaN makes both `a >= b` and `a < b` false - so a bad
+// timestamp took the else-branch of every downstream comparison instead of surfacing.
+// Anything that reintroduces that must not reach npm.
+{
+  const M = await import('../lib/index.js');
+  const MALFORMED = ['not-a-date', '', '2026-02-30T00:00:00', '2026-13-01T00:00:00'];
+  const throwsRange = (f) => {
+    try { f(); return false; } catch (e) { return e instanceof RangeError; }
+  };
+  check(MALFORMED.every((b) => throwsRange(() => M.ChronoInstant.parse(b))),
+        'ChronoInstant.parse throws RangeError on malformed input');
+  check(MALFORMED.every((b) => throwsRange(() => M.ChronoPlain.parse(b))),
+        'ChronoPlain.parse throws RangeError on malformed input');
+  check(MALFORMED.every((b) => throwsRange(() => M.ChronoZoned.parse(b, 'UTC'))),
+        'ChronoZoned.parse throws RangeError on malformed input');
+  check(throwsRange(() => M.ChronoInstant.fromDate(new Date(NaN))),
+        'ChronoInstant.fromDate throws on an invalid Date');
+  check(MALFORMED.every((b) => M.ChronoInstant.tryParse(b) === null),
+        'ChronoInstant.tryParse returns null rather than throwing');
+  check(MALFORMED.every((b) => M.ChronoPlain.tryParse(b) === null &&
+                               M.ChronoZoned.tryParse(b, 'UTC') === null),
+        'ChronoPlain and ChronoZoned expose the same tryParse door');
+  check(M.ChronoInstant.parse('2024-03-15T10:30:00.123Z').toISOString() ===
+        '2024-03-15T10:30:00.123Z',
+        'well-formed input still parses unchanged');
+}
+
 check(Object.keys(pkg.dependencies || {}).length === 0, 'zero runtime dependencies');
 
 // --- metadata ---

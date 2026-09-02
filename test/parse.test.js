@@ -5,7 +5,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseISO } from '../lib/core.js';
-import { ChronoInstant } from '../lib/index.js';
+import { ChronoInstant, InvalidInstantError } from '../lib/index.js';
 import { EDGE_INSTANTS, scattered, isoCanonical, isoNoFraction, isoWithOffset, utc } from './helpers.js';
 
 describe('parseISO — accepted forms', () => {
@@ -146,10 +146,17 @@ describe('ChronoInstant.parse mirrors parseISO', () => {
       assert.equal(ChronoInstant.parse(isoCanonical(ms)).ms, ms);
     }
   });
-  test('invalid input yields an instance reporting isValid === false', () => {
-    const t = ChronoInstant.parse('nonsense');
-    assert.equal(t.isValid, false);
-    assert.ok(Number.isNaN(t.ms));
+  test('invalid input throws rather than yielding a NaN-carrying instance', () => {
+    // The old contract returned an instance with isValid === false. It was withdrawn:
+    // a NaN makes BOTH `a >= b` and `a < b` false, so a bad timestamp silently took the
+    // else-branch of every downstream comparison instead of surfacing.
+    assert.throws(() => ChronoInstant.parse('nonsense'), InvalidInstantError);
+    assert.throws(() => ChronoInstant.parse('nonsense'), RangeError);
+  });
+  test('tryParse is the non-throwing door, and returns null', () => {
+    assert.equal(ChronoInstant.tryParse('nonsense'), null);
+    assert.equal(ChronoInstant.tryParse('2024-03-15T10:30:00.000Z').toISOString(),
+                 '2024-03-15T10:30:00.000Z');
   });
   test('valid input reports isValid === true', () => {
     assert.equal(ChronoInstant.parse('2024-03-15T10:30:00.000Z').isValid, true);

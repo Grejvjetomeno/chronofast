@@ -66,7 +66,7 @@ Full tables in [`REPORT.md`](./REPORT.md); reproduce with `npm run bench:all`.
 | Format to ISO-8601 | 507 | **62** | 647 | 1,390 | 2,763 | 8× |
 | Format `YYYY-MM-DD` | 519 | **43** | 1,427 | 5,973 | 5,069 | 12× |
 | Add 7 days | 88 | **4** | 998 | 7,431 | 8,144 | 22× |
-| Add 1 month, clamped | 228 | **34** | 2,753 | 7,539 | 8,121 | 7× |
+| Add 1 month, clamped | 228 | **31** | 2,753 | 7,539 | 8,121 | 7× |
 | Truncate to start of day | 111 | **11** | 600 | 5,395 | 6,609 | 10× |
 | Calendar days between | 219 | **6** | 1,506 | 12,816 | 51,235 | 38× |
 | Read all six fields | 111 | **73** | 181 | 6,377 | 4,798 | 2× |
@@ -87,7 +87,7 @@ same library code against a stronger baseline.
 | Format to ISO-8601 | 162 | **101** | 248 | 3,265 | 2× |
 | Format `YYYY-MM-DD` | 176 | **59** | 1,114 | 5,350 | 3× |
 | Add 7 days | 73 | **3** | 671 | 9,331 | 27× |
-| Add 1 month, clamped | 160 | **34** | 2,148 | 8,982 | 5× |
+| Add 1 month, clamped | 160 | **30** | 2,148 | 8,982 | 5× |
 | Truncate to start of day | 82 | **4** | 533 | 7,573 | 19× |
 | Calendar days between | 167 | **3** | 1,466 | 31,700 | 66× |
 | Read all six fields | 63 | **30** | 118 | 5,095 | 2× |
@@ -344,6 +344,64 @@ ChronoZoned.fromLocal('Europe/Bratislava', 2024, 3, 31, 2, 30).toISOString()
 ChronoZoned.fromLocal('Europe/Bratislava', 2024, 10, 27, 2, 30, 0, 0, 'reject')
 // throws AmbiguousTimeError
 ```
+
+### Parsing fails closed
+
+`parse` **throws `InvalidInstantError`** — which extends `RangeError` — on anything it
+cannot read. `tryParse` is the same parser with a `null` return instead of a throw.
+
+```ts
+ChronoInstant.parse('not-a-date')        // throws InvalidInstantError
+ChronoInstant.tryParse('not-a-date')     // null
+
+const t = ChronoInstant.tryParse(row.timestamp);
+if (t === null) { logRejected(row); continue; }
+```
+
+This holds for `ChronoInstant`, `ChronoPlain` and `ChronoZoned` alike, and
+`ChronoInstant.fromDate` refuses an invalid `Date` rather than laundering it into a
+NaN-carrying instant.
+
+**Why it is a throw and not an `isValid` flag.** An earlier version returned an instance
+whose `isValid` was `false`, in the style of `Date`. That is a trap, because `NaN` makes
+*both* sides of a comparison false:
+
+```ts
+const t = ChronoInstant.parse(garbage);   // the old behaviour
+t.epochMilliseconds >= Date.now()         // false
+t.epochMilliseconds <  Date.now()         // false, too
+```
+
+So a timestamp nobody could read did not compare *wrong* — it silently took the
+else-branch of every comparison downstream. Code asking "is this slot still in the
+future?" answered "no" for a value it never understood, and a caller that only handles the
+true branch would hide the row rather than flag it. For a parser fed by an external API
+that is the wrong direction to fail in, so the door is now closed by default and
+`tryParse` is how you open it deliberately.
+
+`Temporal.Instant.from` throws on the same inputs, so migrating code that already catches
+`RangeError` needs no change.
+
+### Precision is milliseconds, and sub-millisecond digits are dropped
+
+An instant is one number of milliseconds. That is the reason for most of the speed on this
+page, and the cost is real: extra digits are **truncated, silently**, exactly as
+`Date.parse` truncates them.
+
+```ts
+ChronoInstant.parse('2026-09-02T16:30:00.123456Z').toISOString()
+// '2026-09-02T16:30:00.123Z'   - the 456 is gone
+
+Temporal.Instant.from('2026-09-02T16:30:00.123456Z').toString()
+// '2026-09-02T16:30:00.123456Z' - Temporal keeps it
+```
+
+Microsecond input is **accepted, not rejected** — Postgres `timestamptz` emits microseconds
+by default, and refusing it would refuse the most common real input. But it means a value
+read from such a column, parsed, and written back has lost precision. If you round-trip
+database timestamps through chronofast, either keep the original string alongside the
+parsed value or accept the truncation deliberately. This is the one place where migrating
+from `Temporal` loses information rather than merely changing syntax.
 
 ### Errors
 

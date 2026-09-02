@@ -396,8 +396,9 @@ describe('a zone designator decides what a string means', () => {
     assert.equal(z.toISOString(), '2000-09-01T10:00:00.000+02:00');
   });
 
-  test('malformed input stays invalid rather than being reinterpreted', () => {
-    assert.ok(Number.isNaN(ChronoZoned.parse('nonsense', TZ).epochMilliseconds));
+  test('malformed input throws rather than being reinterpreted', () => {
+    assert.throws(() => ChronoZoned.parse('nonsense', TZ), RangeError);
+    assert.equal(ChronoZoned.tryParse('nonsense', TZ), null);
   });
 
   test('disambiguation is honoured for a nonexistent local time', () => {

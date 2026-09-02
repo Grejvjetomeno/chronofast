@@ -22,6 +22,7 @@ export { AmbiguousTimeError } from './zone.js';
 import type { EpochMs, WallMs, TimeZoneId } from './brand.js';
 import {
   unsafeEpochMs, unsafeWallMs, epochMs as checkedEpochMs, timeZone as checkedZone,
+  InvalidInstantError,
 } from './brand.js';
 import {
   parseISO, hasZoneDesignator, toISO, toISODate, unpack, readFields,
@@ -82,9 +83,32 @@ export class ChronoInstant {
    * If the string is a local reading rather than a moment, use {@link ChronoPlain.parse}
    * or {@link ChronoZoned.parse}, which do not assume UTC.
    *
-   * Returns an instance whose `isValid` is `false` on malformed input; it does not throw.
+   * **Throws `InvalidInstantError` (a `RangeError`) on malformed input**, matching
+   * `Temporal.Instant.from`. Use {@link tryParse} when the input is untrusted.
+   *
+   * Returning a NaN-carrying instance instead was tried and withdrawn: NaN makes *both*
+   * `a >= b` and `a < b` false, so a bad timestamp silently takes the else-branch of every
+   * comparison rather than surfacing. A parser fed by an external API must fail closed.
    */
-  static parse(s: string): ChronoInstant { return new ChronoInstant(parseISO(s)); }
+  static parse(s: string): ChronoInstant {
+    const ms = parseISO(s);
+    if (ms !== ms) throw new InvalidInstantError(s);
+    return new ChronoInstant(ms);
+  }
+
+  /**
+   * Like {@link parse}, but returns `null` instead of throwing. For untrusted input where
+   * a bad value is expected and handled:
+   *
+   * ```ts
+   * const t = ChronoInstant.tryParse(row.timestamp);
+   * if (t === null) { logRejected(row); continue; }
+   * ```
+   */
+  static tryParse(s: string): ChronoInstant | null {
+    const ms = parseISO(s);
+    return ms !== ms ? null : new ChronoInstant(ms);
+  }
 
   /** Validates. Throws `InvalidInstantError` on NaN, Infinity, or out-of-range input. */
   static fromEpochMs(ms: number): ChronoInstant { return new ChronoInstant(checkedEpochMs(ms)); }
@@ -93,7 +117,11 @@ export class ChronoInstant {
   static now(): ChronoInstant { return new ChronoInstant(unsafeEpochMs(Date.now())); }
 
   /** Convert from a native `Date`. The moment is preserved exactly. */
-  static fromDate(d: Date): ChronoInstant { return new ChronoInstant(unsafeEpochMs(d.getTime())); }
+  static fromDate(d: Date): ChronoInstant {
+    const ms = d.getTime();
+    if (ms !== ms) throw new InvalidInstantError(ms);
+    return new ChronoInstant(unsafeEpochMs(ms));
+  }
 
   /** Comparator for `Array#sort`, earliest first. Only accepts moments. */
   static compare(a: ChronoInstant, b: ChronoInstant): -1 | 0 | 1 {
@@ -168,10 +196,14 @@ export class ChronoInstant {
   toISOString(): string { return toISO(this.ms); }
   /** `YYYY-MM-DD` in UTC. */
   toISODate(): string { return toISODate(this.ms); }
-  /** Same as {@link toISOString}. */
-  toString(): string { return toISO(this.ms); }
-  /** Serialises to ISO-8601, so `JSON.stringify` round-trips through {@link parse}. */
-  toJSON(): string { return toISO(this.ms); }
+  /** Same as {@link toISOString}, but yields `'Invalid Date'` instead of throwing. */
+  toString(): string { return this.ms === this.ms ? toISO(this.ms) : 'Invalid Date'; }
+  /**
+   * Serialises to ISO-8601, so `JSON.stringify` round-trips through {@link parse}.
+   * An invalid moment serialises to `null`, matching `Date#toJSON()` - a broken value must
+   * not travel into JSON looking like a timestamp.
+   */
+  toJSON(): string | null { return this.ms === this.ms ? toISO(this.ms) : null; }
   /** The epoch milliseconds, so `<`, `>` and `-` work between moments. */
   valueOf(): number { return this.ms; }
 }
@@ -213,7 +245,17 @@ export class ChronoPlain {
    * **ignored** - a reading has no offset. Use {@link ChronoInstant.parse} if you meant a
    * moment, or {@link ChronoZoned.parse} to resolve one against a zone.
    */
-  static parse(s: string): ChronoPlain { return new ChronoPlain(unsafeWallMs(parseISO(s))); }
+  static parse(s: string): ChronoPlain {
+    const ms = parseISO(s);
+    if (ms !== ms) throw new InvalidInstantError(s);
+    return new ChronoPlain(unsafeWallMs(ms));
+  }
+
+  /** Like {@link parse}, but returns `null` instead of throwing. */
+  static tryParse(s: string): ChronoPlain | null {
+    const ms = parseISO(s);
+    return ms !== ms ? null : new ChronoPlain(unsafeWallMs(ms));
+  }
 
   /**
    * Build from calendar fields.
@@ -361,6 +403,7 @@ export class ChronoPlain {
    * `Temporal.PlainDateTime#toString()` produces.
    */
   toPlainISOString(): string {
+    if (this.wall !== this.wall) throw new RangeError('Invalid time value');
     unpack(this.wall);
     let frac = '';
     if (cMs !== 0) {
@@ -373,10 +416,13 @@ export class ChronoPlain {
 
   /** `YYYY-MM-DD`. Identical to `Temporal.PlainDate#toString()`. */
   toISODate(): string { return toISODate(this.wall as unknown as EpochMs); }
-  /** Same as {@link toPlainISOString}. */
-  toString(): string { return this.toPlainISOString(); }
-  /** Serialises without a `Z`, because the reading carries no offset to claim. */
-  toJSON(): string { return this.toPlainISOString(); }
+  /** Same as {@link toPlainISOString}, but yields `'Invalid Date'` instead of throwing. */
+  toString(): string { return this.wall === this.wall ? this.toPlainISOString() : 'Invalid Date'; }
+  /**
+   * Serialises without a `Z`, because the reading carries no offset to claim.
+   * An invalid reading serialises to `null`, matching `Date#toJSON()`.
+   */
+  toJSON(): string | null { return this.wall === this.wall ? this.toPlainISOString() : null; }
 }
 
 // ============================================================ ChronoZoned
@@ -413,7 +459,21 @@ export class ChronoZoned {
   ): ChronoZoned {
     const zoneId = checkedZone(tz);
     const ms = parseISO(s);
-    if (Number.isNaN(ms) || hasZoneDesignator(s)) return new ChronoZoned(ms, zoneId);
+    if (ms !== ms) throw new InvalidInstantError(s);
+    if (hasZoneDesignator(s)) return new ChronoZoned(ms, zoneId);
+    return new ChronoZoned(utcFromWall(zoneId, unsafeWallMs(ms), disambiguation), zoneId);
+  }
+
+  /** Like {@link parse}, but returns `null` instead of throwing on malformed input. */
+  static tryParse(
+    s: string,
+    tz: TimeZoneId | string,
+    disambiguation: Disambiguation = 'compatible',
+  ): ChronoZoned | null {
+    const ms = parseISO(s);
+    if (ms !== ms) return null;
+    const zoneId = checkedZone(tz);
+    if (hasZoneDesignator(s)) return new ChronoZoned(ms, zoneId);
     return new ChronoZoned(utcFromWall(zoneId, unsafeWallMs(ms), disambiguation), zoneId);
   }
 
@@ -541,10 +601,18 @@ export class ChronoZoned {
   toISOString(): string { return formatZoned(this.tz, this.ms); }
   /** Local `YYYY-MM-DD`, which can differ from the UTC date. */
   toISODate(): string { return toZonedISODate(this.tz, this.ms); }
-  /** Local ISO with the zone id appended, e.g. `...+01:00[Europe/Bratislava]`. */
-  toString(): string { return formatZoned(this.tz, this.ms) + '[' + this.tz + ']'; }
-  /** Serialises with its offset but without the zone id. Store `tz` separately if needed. */
-  toJSON(): string { return formatZoned(this.tz, this.ms); }
+  /**
+   * Local ISO with the zone id appended, e.g. `...+01:00[Europe/Bratislava]`.
+   * Yields `'Invalid Date'` instead of throwing.
+   */
+  toString(): string {
+    return this.ms === this.ms ? formatZoned(this.tz, this.ms) + '[' + this.tz + ']' : 'Invalid Date';
+  }
+  /**
+   * Serialises with its offset but without the zone id. Store `tz` separately if needed.
+   * An invalid moment serialises to `null`, matching `Date#toJSON()`.
+   */
+  toJSON(): string | null { return this.ms === this.ms ? formatZoned(this.tz, this.ms) : null; }
   /** The epoch milliseconds, so `<`, `>` and `-` compare moments across zones. */
   valueOf(): number { return this.ms; }
 }
