@@ -7,4 +7,4 @@
 // slots at 0 - which is exactly the mismatch the correctness gate caught.
 export * from '../lib/core.js';
 export * from '../lib/zone.js';
-export { ChronoInstant, ChronoPlain, ChronoZoned } from '../lib/index.js';
+export { ChronoInstant, ChronoPlain, ChronoDate, ChronoZoned } from '../lib/index.js';

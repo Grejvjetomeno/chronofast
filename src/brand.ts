@@ -111,4 +111,5 @@ export function timeZone(id: string): TimeZoneId {
 export const unsafeTimeZone = (id: string): TimeZoneId => id as TimeZoneId;
 
 /** The sentinel returned by parsing failures. Narrows an EpochMs to a definite value. */
-export const isValidInstant = (t: EpochMs): boolean => !Number.isNaN(t);
+export const isValidInstant = (t: number): boolean =>
+  t >= -MAX_EPOCH_MS && t <= MAX_EPOCH_MS;

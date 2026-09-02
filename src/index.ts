@@ -27,7 +27,8 @@ import {
 } from './brand.js';
 import {
   parseISO, parseISOWall, hasZoneDesignator, hasUtcDesignator, toISO, toISODate, unpack, readFields,
-  pad2, pad3, pad4, daysFromCivil, MS_DAY, civilFromDays, dayIndexOf, isoDateOfDay,
+  pad2, pad3, pad4, year6, daysFromCivil, MS_DAY, civilFromDays, dayIndexOf, isoDateOfDay,
+  isRepresentable,
   daysInMonth as daysInMonthRaw, isLeapYear as isLeapYearRaw,
   dayOfWeekOfDay, dayOfYearOfDay, isoWeekOfDay, isoWeekYearOfDay,
   startOfMonthOfDay, startOfYearOfDay, startOfWeekOfDay, endOfMonthOfDay,
@@ -43,6 +44,7 @@ import {
 } from './core.js';
 import {
   offsetAt, utcFromWall, formatZoned, toZonedISODate, startOfDayZoned, formatLocale,
+  namesATimeComponent,
   addDaysZoned, addMonthsZoned, zonedFields, type Disambiguation,
 } from './zone.js';
 import { cY, cM, cD, cH, cMi, cS, cMs } from './core.js';
@@ -137,7 +139,7 @@ export class ChronoInstant {
   get epochMilliseconds(): number { return this.ms; }
 
   /** `false` if this came from parsing malformed input. */
-  get isValid(): boolean { return !Number.isNaN(this.ms); }
+  get isValid(): boolean { return isRepresentable(this.ms); }
 
   // ---- exact-time arithmetic; a calendar is not involved, so no zone is needed ----
 
@@ -202,13 +204,13 @@ export class ChronoInstant {
   /** `YYYY-MM-DD` in UTC. */
   toISODate(): string { return toISODate(this.ms); }
   /** Same as {@link toISOString}, but yields `'Invalid Date'` instead of throwing. */
-  toString(): string { return this.ms === this.ms ? toISO(this.ms) : 'Invalid Date'; }
+  toString(): string { return isRepresentable(this.ms) ? toISO(this.ms) : 'Invalid Date'; }
   /**
    * Serialises to ISO-8601, so `JSON.stringify` round-trips through {@link parse}.
    * An invalid moment serialises to `null`, matching `Date#toJSON()` - a broken value must
    * not travel into JSON looking like a timestamp.
    */
-  toJSON(): string | null { return this.ms === this.ms ? toISO(this.ms) : null; }
+  toJSON(): string | null { return isRepresentable(this.ms) ? toISO(this.ms) : null; }
 
   /**
    * Locale-aware text, through `Intl`. A moment has no zone of its own, so this renders in the **host** zone, matching
@@ -306,7 +308,7 @@ export class ChronoPlain {
   }
 
   /** `false` if this came from parsing malformed input. */
-  get isValid(): boolean { return !Number.isNaN(this.wall); }
+  get isValid(): boolean { return isRepresentable(this.wall); }
 
   /** Calendar year. */
   get year(): number { return getYear(this.wall as unknown as EpochMs); }
@@ -465,14 +467,17 @@ export class ChronoPlain {
    * `Temporal.PlainDateTime#toString()` produces.
    */
   toPlainISOString(): string {
-    if (this.wall !== this.wall) throw new RangeError('Invalid time value');
+    if (!isRepresentable(this.wall)) throw new RangeError('Invalid time value');
     unpack(this.wall);
     let frac = '';
     if (cMs !== 0) {
       const d3 = pad3(cMs);
       frac = '.' + (d3.charCodeAt(2) !== 48 ? d3 : d3.charCodeAt(1) !== 48 ? d3.slice(0, 2) : d3.slice(0, 1));
     }
-    return pad4(cY) + '-' + pad2(cM) + '-' + pad2(cD) + 'T' +
+    // Years outside 0..9999 need the ISO expanded form with an explicit sign; pad4 would
+    // pad in front of the minus and emit '000-110091'.
+    const y = cY >= 0 && cY <= 9999 ? pad4(cY) : year6(cY);
+    return y + '-' + pad2(cM) + '-' + pad2(cD) + 'T' +
            pad2(cH) + ':' + pad2(cMi) + ':' + pad2(cS) + frac;
   }
 
@@ -487,12 +492,12 @@ export class ChronoPlain {
   /** `YYYY-MM-DD`. Identical to `Temporal.PlainDate#toString()`. */
   toISODate(): string { return toISODate(this.wall as unknown as EpochMs); }
   /** Same as {@link toPlainISOString}, but yields `'Invalid Date'` instead of throwing. */
-  toString(): string { return this.wall === this.wall ? this.toPlainISOString() : 'Invalid Date'; }
+  toString(): string { return isRepresentable(this.wall) ? this.toPlainISOString() : 'Invalid Date'; }
   /**
    * Serialises without a `Z`, because the reading carries no offset to claim.
    * An invalid reading serialises to `null`, matching `Date#toJSON()`.
    */
-  toJSON(): string | null { return this.wall === this.wall ? this.toPlainISOString() : null; }
+  toJSON(): string | null { return isRepresentable(this.wall) ? this.toPlainISOString() : null; }
 }
 
 // ============================================================ ChronoDate
@@ -583,7 +588,7 @@ export class ChronoDate {
   }
 
   /** `false` if this was built from a NaN day index. */
-  get isValid(): boolean { return this.dayIndex === this.dayIndex; }
+  get isValid(): boolean { return isRepresentable(this.dayIndex * MS_DAY); }
 
   /** Calendar year. Negative before 1 CE. */
   get year(): number { civilFromDays(this.dayIndex); return cY; }
@@ -693,11 +698,11 @@ export class ChronoDate {
   toISODate(): string { return isoDateOfDay(this.dayIndex); }
   /** Same as {@link toISODate}, but yields `'Invalid Date'` instead of throwing. */
   toString(): string {
-    return this.dayIndex === this.dayIndex ? isoDateOfDay(this.dayIndex) : 'Invalid Date';
+    return this.isValid ? isoDateOfDay(this.dayIndex) : 'Invalid Date';
   }
   /** Serialises as `YYYY-MM-DD`; an invalid date serialises to `null`, like `Date`. */
   toJSON(): string | null {
-    return this.dayIndex === this.dayIndex ? isoDateOfDay(this.dayIndex) : null;
+    return this.isValid ? isoDateOfDay(this.dayIndex) : null;
   }
 
   /**
@@ -715,15 +720,26 @@ export class ChronoDate {
    * `Object.prototype.toLocaleString`, which ignores the locale and returns the ISO string.
    */
   toLocaleString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
-    return formatLocale(this.dayIndex * MS_DAY, 'UTC', locales, options, 1);
+    return this.#localised(locales, options);
   }
-  /** Date only, in the caller's locale. */
+  /** Identical to {@link toLocaleString}; a date has only a date to render. */
   toLocaleDateString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
-    return formatLocale(this.dayIndex * MS_DAY, 'UTC', locales, options, 1);
+    return this.#localised(locales, options);
   }
-  /** Time only, in the caller's locale. */
-  toLocaleTimeString(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
-    return formatLocale(this.dayIndex * MS_DAY, 'UTC', locales, options, 2);
+
+  /**
+   * Asking a date to render a time is refused, not answered with midnight.
+   *
+   * `{ hour: '2-digit' }` used to print `'00'`, which is the plausible-wrong-answer shape
+   * this whole type exists to remove - the same reason it has no `hour` getter.
+   * `Temporal.PlainDate#toLocaleString` throws a `TypeError` on the same options, so this
+   * does too. There is no `toLocaleTimeString` here for the same reason.
+   */
+  #localised(locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
+    if (namesATimeComponent(options)) {
+      throw new TypeError('Invalid formatting options: a ChronoDate has no time of day');
+    }
+    return formatLocale(this.dayIndex * MS_DAY, 'UTC', locales, options, 1);
   }
 
   /** The day index, so `<`, `>` and `-` work between dates. `b - a` is whole days. */
@@ -811,7 +827,7 @@ export class ChronoZoned {
   /** Milliseconds since the epoch. Independent of the zone. */
   get epochMilliseconds(): number { return this.ms; }
   /** `false` if this came from parsing malformed input. */
-  get isValid(): boolean { return !Number.isNaN(this.ms); }
+  get isValid(): boolean { return isRepresentable(this.ms); }
   /** UTC offset in **milliseconds** at this moment, e.g. `7200000` for +02:00. */
   get offset(): number { return offsetAt(this.tz, this.ms); }
   /** UTC offset in hours, fractional for zones like `+05:45`. */
@@ -920,13 +936,13 @@ export class ChronoZoned {
    * Yields `'Invalid Date'` instead of throwing.
    */
   toString(): string {
-    return this.ms === this.ms ? formatZoned(this.tz, this.ms) + '[' + this.tz + ']' : 'Invalid Date';
+    return isRepresentable(this.ms) ? formatZoned(this.tz, this.ms) + '[' + this.tz + ']' : 'Invalid Date';
   }
   /**
    * Serialises with its offset but without the zone id. Store `tz` separately if needed.
    * An invalid moment serialises to `null`, matching `Date#toJSON()`.
    */
-  toJSON(): string | null { return this.ms === this.ms ? formatZoned(this.tz, this.ms) : null; }
+  toJSON(): string | null { return isRepresentable(this.ms) ? formatZoned(this.tz, this.ms) : null; }
 
   /**
    * Locale-aware text, through `Intl`. Rendered in **this value's own zone**, so `timeZoneName` options resolve correctly.
@@ -959,6 +975,16 @@ export class ChronoZoned {
 // ============================================================ Now
 
 let systemZone: string | null = null;
+let systemZoneAt = 0;
+
+/**
+ * How long a resolved system zone is trusted, in milliseconds.
+ *
+ * One second bounds the staleness a host zone change can cause while costing one `Intl`
+ * resolve per second in the worst case - about 0.004% of a busy second. `Temporal.Now`
+ * re-reads on every call and pays ~37us each time; this is the same answer, amortised.
+ */
+const ZONE_CACHE_MS = 1000;
 
 /**
  * Reading the current time, with the ambiguity made explicit.
@@ -980,16 +1006,31 @@ export const Now = {
   /**
    * The system time zone id, e.g. `'Europe/Bratislava'`.
    *
-   * Cached after the first call: resolving it costs about 89 microseconds and it is the
-   * default argument of every other method here. Call {@link Now.refreshTimeZone} if the
-   * host zone can change under a long-running process.
+   * **Cached, but only briefly.** Asking the host costs ~37us against ~6ns for a cached
+   * read, so caching is not optional at these speeds; caching *forever* is a correctness
+   * bug. A host zone really can change under a running process - a laptop crossing a
+   * border, an OS setting changed with an SPA still open, `TZ` reassigned in a Node
+   * process - and an indefinite cache answered with the old zone silently. Measured
+   * against a live `TZ` change, the stale reading was seven hours wrong while `Date` was
+   * right, and nothing threw.
+   *
+   * So the value is re-read when it is more than {@link ZONE_CACHE_MS} old. The check is
+   * a clock read the caller has usually already paid for: every other method here needs
+   * `Date.now()` anyway and hands it in, so on those paths the freshness check is two
+   * comparisons and no syscall.
+   *
+   * {@link Now.refreshTimeZone} forces it immediately, for a host that can tell you the
+   * zone changed rather than making you wait out the window.
    */
-  timeZoneId(): string {
-    if (systemZone === null) systemZone = new Intl.DateTimeFormat().resolvedOptions().timeZone;
+  timeZoneId(nowMs: number = Date.now()): string {
+    if (systemZone === null || nowMs - systemZoneAt >= ZONE_CACHE_MS || nowMs < systemZoneAt) {
+      systemZone = new Intl.DateTimeFormat().resolvedOptions().timeZone;
+      systemZoneAt = nowMs;
+    }
     return systemZone;
   },
 
-  /** Re-read the system zone on the next {@link Now.timeZoneId} call. */
+  /** Re-read the system zone on the very next call, without waiting out the window. */
   refreshTimeZone(): void {
     systemZone = null;
   },
@@ -1005,8 +1046,9 @@ export const Now = {
   },
 
   /** The current moment, read through `tz` - the system zone by default. */
-  zonedDateTimeISO(tz: TimeZoneId | string = Now.timeZoneId()): ChronoZoned {
-    return new ChronoZoned(unsafeEpochMs(Date.now()), checkedZone(tz));
+  zonedDateTimeISO(tz?: TimeZoneId | string): ChronoZoned {
+    const ms = Date.now();
+    return new ChronoZoned(unsafeEpochMs(ms), checkedZone(tz ?? Now.timeZoneId(ms)));
   },
 
   /**
@@ -1016,14 +1058,24 @@ export const Now = {
    * At 09:07 local this reads 09:07. It is a {@link ChronoPlain}, so it has no
    * `epochMilliseconds` to mistake for a timestamp.
    */
-  plainDateTimeISO(tz: TimeZoneId | string = Now.timeZoneId()): ChronoPlain {
+  plainDateTimeISO(tz?: TimeZoneId | string): ChronoPlain {
     const ms = Date.now();
-    return new ChronoPlain(unsafeWallMs(ms + offsetAt(checkedZone(tz), unsafeEpochMs(ms))));
+    const zoneId = checkedZone(tz ?? Now.timeZoneId(ms));
+    return new ChronoPlain(unsafeWallMs(ms + offsetAt(zoneId, unsafeEpochMs(ms))));
   },
 
-  /** Today's **local** date in `tz`, at midnight, with no zone attached. */
-  plainDateISO(tz: TimeZoneId | string = Now.timeZoneId()): ChronoPlain {
-    return Now.plainDateTimeISO(tz).startOfDay();
+  /**
+   * Today's **local** date in `tz` - a {@link ChronoDate}, matching what
+   * `Temporal.Now.plainDateISO()` returns.
+   *
+   * It returned a `ChronoPlain` pinned to midnight until 1.0.2, which meant
+   * `Now.plainDateISO().addHours(5)` compiled and produced a value that was no longer a
+   * date. That is precisely the hazard `ChronoDate` exists to remove, so the return type
+   * was corrected rather than documented around. For a midnight *reading* rather than a
+   * date, `Now.plainDateTimeISO(tz).startOfDay()` still says so explicitly.
+   */
+  plainDateISO(tz?: TimeZoneId | string): ChronoDate {
+    return Now.plainDateTimeISO(tz).toPlainDate();
   },
 
   /**
@@ -1033,7 +1085,7 @@ export const Now = {
    * comparisons want. Note it is not monotonic on a spring-forward day, when an hour of
    * local time does not exist.
    */
-  minutesSinceMidnight(tz: TimeZoneId | string = Now.timeZoneId()): number {
+  minutesSinceMidnight(tz?: TimeZoneId | string): number {
     const p = Now.plainDateTimeISO(tz);
     return p.hour * 60 + p.minute;
   },

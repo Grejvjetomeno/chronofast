@@ -7,7 +7,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { Now, ChronoInstant, ChronoPlain, ChronoZoned, UnknownTimeZoneError } from '../lib/index.js';
+import { Now, ChronoInstant, ChronoPlain, ChronoZoned, UnknownTimeZoneError, ChronoDate } from '../lib/index.js';
 
 /** The true local wall clock, read independently of chronofast. */
 function wallClock(tz) {
@@ -61,13 +61,17 @@ describe('Now — which clock is it?', () => {
     assert.ok(Math.abs(z.epochMilliseconds - Date.now()) < 5000, 'must be the current instant');
   });
 
-  test('plainDateISO() is the local date at midnight', () => {
+  test('plainDateISO() is the local date, and carries no time at all', () => {
     const d = Now.plainDateISO();
     assert.equal(d.toISODate(), wallClock(Now.timeZoneId()).slice(0, 10));
-    assert.equal(d.hour, 0);
-    assert.equal(d.minute, 0);
-    assert.equal(d.second, 0);
-    assert.equal(d.millisecond, 0);
+    // It used to be a ChronoPlain pinned to midnight, so `.hour` read 0 and `.addHours(5)`
+    // compiled - producing a value that was no longer a date. It is a ChronoDate now, and
+    // the absence is the assertion.
+    assert.ok(d instanceof ChronoDate);
+    for (const f of ['hour', 'minute', 'second', 'millisecond', 'addHours']) {
+      assert.equal(f in d, false, f);
+    }
+    assert.equal(d.toPlain().hour, 0, 'a midnight reading is still one call away');
   });
 
   test('plainDateISO(tz) can differ from the UTC date, which is the whole point', () => {

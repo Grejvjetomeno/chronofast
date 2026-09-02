@@ -91,6 +91,9 @@ check(!Now.plainDateTimeISO().toPlainISOString().includes('Z'), 'toPlainISOStrin
   const throwsRange = (f) => {
     try { f(); return false; } catch (e) { return e instanceof RangeError; }
   };
+  const throwsType = (f) => {
+    try { f(); return false; } catch (e) { return e instanceof TypeError; }
+  };
   check(MALFORMED.every((b) => throwsRange(() => M.ChronoInstant.parse(b))),
         'ChronoInstant.parse throws RangeError on malformed input');
   check(MALFORMED.every((b) => throwsRange(() => M.ChronoPlain.parse(b))),
@@ -125,6 +128,16 @@ check(!Now.plainDateTimeISO().toPlainISOString().includes('Z'), 'toPlainISOStrin
         '2024-03-15T23:30:00',
         'ChronoPlain keeps the wall clock as written rather than shifting it');
 
+  // A date must refuse to render a time rather than answering with midnight, and must be
+  // able to read back the expanded-year strings it emits.
+  check(!('toLocaleTimeString' in d) &&
+        throwsType(() => d.toLocaleString('sk-SK', { hour: '2-digit' })),
+        'ChronoDate refuses time components instead of printing 00:00');
+  check(M.ChronoDate.parse(new M.ChronoDate(-40000000).toISODate()).dayIndex === -40000000 &&
+        M.ChronoInstant.parse(new M.ChronoInstant(-3536294155596616).toISOString())
+          .epochMilliseconds === -3536294155596616,
+        'expanded-year output parses back (the library can read what it writes)');
+
   // toLocaleString must be DEFINED, not inherited. Object.prototype.toLocaleString exists
   // on every object and delegates to toString(), so `typeof x.toLocaleString === 'function'`
   // is true even when the method is missing - the failure is silent and renders ISO text
@@ -137,7 +150,12 @@ check(!Now.plainDateTimeISO().toPlainISOString().includes('Z'), 'toPlainISOStrin
   ]) {
     const proto = Object.getPrototypeOf(obj);
     const own = Object.getOwnPropertyNames(proto);
-    check(['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString'].every((m) => own.includes(m)),
+    // ChronoDate has no toLocaleTimeString on purpose: a date has no time to render, and
+    // Temporal.PlainDate has none either.
+    const wanted = name === 'ChronoDate'
+      ? ['toLocaleString', 'toLocaleDateString']
+      : ['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString'];
+    check(wanted.every((m) => own.includes(m)),
           `${name} defines toLocale* rather than inheriting Object.prototype's`);
     check(obj.toLocaleString('sk-SK') !== obj.toString(),
           `${name}.toLocaleString actually localises instead of echoing the ISO string`);

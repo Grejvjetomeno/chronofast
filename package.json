@@ -1,6 +1,6 @@
 {
   "name": "chronofast",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Fast, immutable date and time library with real IANA time zones and no tzdb bundled. Parsing, formatting, calendar math and Intl locale output. Fully typed, zero dependencies, ~7 kB gzipped.",
   "type": "module",
   "main": "./lib/index.js",
@@ -18,6 +18,10 @@
       "types": "./lib/zone.d.ts",
       "default": "./lib/zone.js"
     },
+    "./brand": {
+      "types": "./lib/brand.d.ts",
+      "default": "./lib/brand.js"
+    },
     "./package.json": "./package.json",
     "./browser": {
       "default": "./browser/chronofast.min.js"
@@ -33,7 +37,7 @@
     "build": "npm run clean && tsc --project tsconfig.build.json && node scripts/build-browser.js",
     "build:browser": "node scripts/build-browser.js",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && npm run test:types && npm run test:unit && npm run test:differential && npm run test:legacy && npm run test:bundle",
+    "test": "npm run build && npm run test:types && npm run test:unit && npm run test:differential && npm run test:temporal && npm run test:legacy && npm run test:bundle",
     "bench": "npm run build && node --expose-gc bench/main.js --tag node --alloc",
     "bench:temporal": "node --expose-gc --harmony-temporal bench/main.js --tag node-temporal --alloc",
     "bench:bun": "bun bench/main.js --tag bun --alloc",
@@ -41,9 +45,11 @@
     "report": "node bench/report/merge.js && node bench/report/artifact.js",
     "size": "node scripts/size.js",
     "release:check": "node scripts/prepublish-check.js",
-    "prepublishOnly": "npm run build && npm run test:types && npm run test:unit && npm run test:differential && npm run test:legacy && npm run test:bundle && node scripts/prepublish-check.js",
+    "prepublishOnly": "npm run build && npm run test:types && npm run test:unit && npm run test:differential && npm run test:temporal && npm run test:legacy && npm run test:bundle && node scripts/prepublish-check.js",
     "test:unit": "node --test test/*.test.js",
     "test:differential": "node test/verify.js",
+    "test:temporal": "node test/differential-temporal.js",
+    "test:temporal:deep": "node test/differential-temporal.js --deep",
     "test:legacy": "node test/verify-legacy-intl.js",
     "test:bundle": "node scripts/verify-browser-bundle.js",
     "test:types": "tsc --noEmit -p tsconfig.types-test.json"

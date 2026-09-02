@@ -28,9 +28,19 @@ describe('the methods are defined, not inherited', () => {
   ]) {
     test(name, () => {
       const proto = Object.getPrototypeOf(obj);
-      for (const m of ['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString']) {
+      // ChronoDate deliberately has no toLocaleTimeString: a date has no time to render,
+      // and Temporal.PlainDate has none either.
+      const expected = name === 'ChronoDate'
+        ? ['toLocaleString', 'toLocaleDateString']
+        : ['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString'];
+      for (const m of expected) {
         assert.ok(Object.getOwnPropertyNames(proto).includes(m),
           `${m} must be defined on ${name}, not inherited from Object.prototype`);
+      }
+      if (name === 'ChronoDate') {
+        assert.equal('toLocaleTimeString' in obj, false, 'a date must not offer a time renderer');
+        assert.throws(() => obj.toLocaleString('sk-SK', { hour: '2-digit' }), TypeError,
+          'and must refuse time components rather than printing midnight');
       }
       // The tell-tale of the old bug: output identical to toString().
       assert.notEqual(obj.toLocaleString('sk-SK'), obj.toString(),
@@ -125,7 +135,11 @@ describe('edge cases', () => {
                        new ChronoInstant(NaN), new ChronoZoned(NaN, TZ)]) {
       assert.equal(bad.toLocaleString('sk-SK'), 'Invalid Date');
       assert.equal(bad.toLocaleDateString('sk-SK'), 'Invalid Date');
-      assert.equal(bad.toLocaleTimeString('sk-SK'), 'Invalid Date');
+      // ChronoDate has no toLocaleTimeString - a date has no time to render.
+      const timeRenderer = /** @type {any} */ (bad).toLocaleTimeString;
+      if (typeof timeRenderer === 'function') {
+        assert.equal(timeRenderer.call(bad, 'sk-SK'), 'Invalid Date');
+      }
     }
   });
 

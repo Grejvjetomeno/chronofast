@@ -41,9 +41,11 @@ answers with whichever number is larger. See landmine 3.
 
 ## Sizing the job before you start
 
-Counts from one production codebase, measured with `ripgrep` over `.ts`, `.tsx`, `.js` and
-`.vue`, excluding build output. Your own numbers will differ; the point is which questions
-to ask:
+Counts from one production codebase: **matching source lines**, via `ripgrep` over `.ts`,
+`.tsx`, `.js` and `.vue`, with dependencies and build output excluded. Counting raw
+occurrences instead, or including `node_modules` and bundled output, inflates these by more
+than an order of magnitude and tells you nothing about how much code you would touch. Your
+own numbers will differ; the point is which questions to ask:
 
 | what to count | found here | migrates how |
 |---|---:|---|
@@ -80,17 +82,18 @@ The `Now` namespace mirrors `Temporal.Now`, so those sites are a mechanical rena
 |---|---|---|
 | `Temporal.Now.instant()` | `Now.instant()` | `ChronoInstant` |
 | `Temporal.Now.plainDateTimeISO()` | `Now.plainDateTimeISO()` | `ChronoPlain` |
-| `Temporal.Now.plainDateISO()` | `Now.plainDateISO()` | `ChronoPlain` at midnight — **see below** |
+| `Temporal.Now.plainDateISO()` | `Now.plainDateISO()` | `ChronoDate` |
 | `Temporal.Now.zonedDateTimeISO(z)` | `Now.zonedDateTimeISO(z)` | `ChronoZoned` |
 | `Temporal.Now.timeZoneId()` | `Now.timeZoneId()` | `string` |
 | `Temporal.Now.plainTimeISO()` | `Now.minutesSinceMidnight()` | `number`, not a type |
 
 All take an optional zone and default to the system zone, as Temporal does.
 
-**One return type does not match.** `Temporal.Now.plainDateISO()` returns a `PlainDate`;
-`Now.plainDateISO()` returns a `ChronoPlain` pinned to midnight, so it still carries `hour`,
-`minute` and `addHours` — all of which read or produce zero. For a real date type use
-`ChronoDate.now(tz)` instead, which returns `ChronoDate` and has no time surface at all.
+Every return type lines up with Temporal's. `Now.plainDateISO()` returned a `ChronoPlain`
+pinned to midnight before 1.0.2 — carrying `hour` and `addHours`, both meaningless on a date
+— and now returns a `ChronoDate`, as `Temporal.Now.plainDateISO()` returns a `PlainDate`.
+`ChronoDate.now(tz)` is the same value by another name. If you want a midnight *reading*
+rather than a date, `Now.plainDateTimeISO(tz).startOfDay()` says so.
 
 **`ChronoInstant.now()` still exists and is still UTC.** Right for storage, comparison and
 audit trails. Wrong for anything a user reads.
@@ -167,19 +170,22 @@ where migrating loses information rather than only changing syntax.
 
 ---
 
-## What changed in 1.0.1, if you read an earlier version of this guide
+## What changed since 1.0.0, if you read an earlier version of this guide
 
-Three statements that used to be here are no longer true:
+Four statements that used to be here are no longer true:
 
 - **"chronofast returns a sentinel on bad input."** It throws now.
   `ChronoInstant.parse('garbage')` raises `InvalidInstantError`, which extends `RangeError`,
   so `catch (e) { if (e instanceof RangeError) }` written against Temporal keeps working
   unchanged. `tryParse` returns `null` if you want the non-throwing door.
-- **"`toLocaleString` is not implemented — use `Intl.DateTimeFormat` directly."** All four
-  types implement `toLocaleString`, `toLocaleDateString` and `toLocaleTimeString`, matching
-  their Temporal counterparts across locales and option shapes.
+- **"`toLocaleString` is not implemented — use `Intl.DateTimeFormat` directly."** Every type
+  implements `toLocaleString` and `toLocaleDateString`, matching its Temporal counterpart
+  across locales and option shapes. `toLocaleTimeString` exists on the three types that
+  carry a time; `ChronoDate` has no such method, as `Temporal.PlainDate` has none.
 - **"`ChronoInstant` can stand in for `PlainDateTime`."** It cannot; it has no calendar
   fields at all. `ChronoPlain` is the equivalent.
+- **"`Now.plainDateISO()` returns a `ChronoPlain` pinned to midnight."** As of 1.0.2 it
+  returns a `ChronoDate`, so the `Now.*` block is now a rename with no exceptions.
 
 ---
 
@@ -191,7 +197,7 @@ Three statements that used to be here are no longer true:
 |---|---|
 | `Temporal.Now.instant()` | `Now.instant()` |
 | `Temporal.Now.plainDateTimeISO()` | `Now.plainDateTimeISO()` |
-| `Temporal.Now.plainDateISO()` | `ChronoDate.now(tz)` (or `Now.plainDateISO()`, see landmine 1) |
+| `Temporal.Now.plainDateISO()` | `Now.plainDateISO()` or `ChronoDate.now(tz)` — same type |
 | `Temporal.Now.zonedDateTimeISO(z)` | `Now.zonedDateTimeISO(z)` |
 | `Temporal.Now.timeZoneId()` | `Now.timeZoneId()` |
 | `Temporal.Now.plainTimeISO()` | `Now.minutesSinceMidnight()` — a number |
@@ -277,12 +283,22 @@ DST gap or overlap).
 | `plainDate.toLocaleString(l, o)` | `date.toLocaleString(l, o)` |
 | `zonedDateTime.toLocaleString(l, o)` | `zoned.toLocaleString(l, o)` |
 | `instant.toLocaleString(l, o)` | `instant.toLocaleString(l, o)` |
-| — | `.toLocaleDateString(l, o)`, `.toLocaleTimeString(l, o)` |
+| — | `.toLocaleDateString(l, o)` on every type; `.toLocaleTimeString(l, o)` on all but `ChronoDate` |
 
 Defaults match their Temporal counterparts: `ChronoDate` prints a date with no clock,
 `ChronoZoned` names its zone, `ChronoPlain` and `ChronoInstant` print date and time. A
-`timeZone` option passed to a zoneless type is ignored, as Temporal ignores it. Formatters
-are cached internally, so repeated calls do not rebuild `Intl.DateTimeFormat`.
+`timeZone` option passed to a zoneless type is ignored, as Temporal ignores it. Asking a
+`ChronoDate` for a time component throws `TypeError` rather than answering `'00'` — again
+matching `Temporal.PlainDate`. Formatters are cached internally, so repeated calls do not
+rebuild `Intl.DateTimeFormat`.
+
+Two divergences are deliberate and worth knowing. chronofast follows **`Date`** on ECMA-402
+option handling, where explicit components replace the defaults; V8's native `Temporal`
+appends the full date and time to a `{ dateStyle }` or `{ weekday }` request instead, and
+differs from `Date` itself in doing so. And chronofast reads time-zone data from the host's
+`Intl`, the same source `Date` uses, rather than bundling a copy — so it tracks the platform
+when tz data updates, and can differ from `temporal-polyfill`'s bundled snapshot in zones
+whose rules are projected rather than fixed.
 
 ---
 

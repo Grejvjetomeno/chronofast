@@ -108,10 +108,22 @@ function rawOffset(zc: Zone, utcMs: number): number {
   if (d2 >>> 0 > 9) { h = d1; k = j + 2; }          // single-digit hour form
   else { h = d1 * 10 + d2; k = j + 3; }
   let m = 0;
+  let sec = 0;
   if (str.charCodeAt(k) === 58) {
     m = (str.charCodeAt(k + 1) - 48) * 10 + (str.charCodeAt(k + 2) - 48);
+    k += 3;
+    // `GMT+00:57:44`. Local Mean Time offsets carry seconds, and ICU emits them - reading
+    // only hours and minutes silently truncated Bratislava's 1847 offset from +00:57:44 to
+    // +00:57. That is not a curiosity: 338 of the 418 zones this host knows had a
+    // sub-minute offset in 1890, and Africa/Monrovia kept one until 1972. Found by the
+    // differential suite; the seconds field is simply read when present.
+    if (str.charCodeAt(k) === 58) {
+      const s1 = str.charCodeAt(k + 1) - 48;
+      const s2 = str.charCodeAt(k + 2) - 48;
+      if (s1 >>> 0 <= 9 && s2 >>> 0 <= 9) sec = s1 * 10 + s2;
+    }
   }
-  const off = h * MS_HOUR + m * MS_MIN;
+  const off = h * MS_HOUR + m * MS_MIN + sec * MS_SEC;
   return sign === 45 ? -off : off;
 }
 
@@ -523,6 +535,18 @@ function hasDateTimeComponent(o: Intl.DateTimeFormatOptions): boolean {
          o.hour !== undefined || o.minute !== undefined || o.second !== undefined ||
          o.weekday !== undefined || o.dayPeriod !== undefined ||
          o.fractionalSecondDigits !== undefined;
+}
+
+/**
+ * Whether the caller asked for a time component. A date type uses this to refuse rather
+ * than render `00:00` for a time it does not have - which is what `Temporal.PlainDate`
+ * does, and what this type exists to prevent.
+ */
+export function namesATimeComponent(o: Intl.DateTimeFormatOptions | undefined): boolean {
+  if (o === undefined) return false;
+  return o.timeStyle !== undefined || o.hour !== undefined || o.minute !== undefined ||
+         o.second !== undefined || o.dayPeriod !== undefined ||
+         o.fractionalSecondDigits !== undefined || o.timeZoneName !== undefined;
 }
 
 /** How many formatters are cached. Diagnostics only. */

@@ -9,7 +9,8 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { ChronoInstant, ChronoPlain, ChronoZoned, InvalidInstantError } from '../lib/index.js';
+import { parseISO } from '../lib/core.js';
+import { ChronoInstant, ChronoPlain, ChronoZoned, InvalidInstantError, ChronoDate, Now } from '../lib/index.js';
 import { toISO, toISODate } from '../lib/core.js';
 
 const INVALID = /^Invalid time value$/;
@@ -173,5 +174,119 @@ describe('sub-millisecond input truncates, exactly as Date.parse does', () => {
   }
   test('microsecond input is accepted, not rejected - Postgres emits it by default', () => {
     assert.equal(ChronoInstant.parse('2026-09-02T16:30:00.123456Z').isValid, true);
+  });
+});
+
+describe('non-finite and out-of-range values are not dates', () => {
+  // Regression: the guard tested `ms !== ms`, which catches NaN and nothing else. Infinity
+  // sailed through to produce "Infinity-03-NaNT00:00:00.NaN" and, worse, `isValid` said
+  // true. A value past the ECMAScript time range silently produced year 3168875820.
+  const BAD = [
+    ['Infinity', Infinity], ['-Infinity', -Infinity], ['NaN', NaN],
+    ['1e20', 1e20], ['-1e20', -1e20],
+    ['one past the max', 8.64e15 + 1], ['one past the min', -8.64e15 - 1],
+  ];
+
+  for (const [label, v] of BAD) {
+    test(`${label} reports invalid on every type`, () => {
+      assert.equal(new ChronoInstant(v).isValid, false);
+      assert.equal(new ChronoPlain(v).isValid, false);
+      assert.equal(new ChronoDate(v).isValid, false);
+      assert.equal(new ChronoZoned(v, 'UTC').isValid, false);
+    });
+
+    test(`${label} never serialises to something date-shaped`, () => {
+      for (const obj of [new ChronoInstant(v), new ChronoPlain(v),
+                         new ChronoDate(v), new ChronoZoned(v, 'UTC')]) {
+        assert.equal(obj.toString(), 'Invalid Date');
+        assert.equal(obj.toJSON(), null);
+        for (const m of ['toISOString', 'toISODate', 'toPlainISOString']) {
+          if (typeof obj[m] !== 'function') continue;
+          assert.throws(() => obj[m](), RangeError, `${m} on ${label}`);
+        }
+      }
+    });
+  }
+
+  test('the representable boundary itself still works', () => {
+    assert.equal(new ChronoInstant(8.64e15).isValid, true);
+    assert.equal(new ChronoInstant(-8.64e15).isValid, true);
+    assert.equal(new ChronoInstant(8.64e15).toISOString(), new Date(8.64e15).toISOString());
+    assert.equal(new ChronoInstant(-8.64e15).toISOString(), new Date(-8.64e15).toISOString());
+  });
+
+  test('the composition the docs show does not swallow a bad parse', () => {
+    // new ChronoPlain(parseISO(s)) is the raw-layer fast path; it must not look like a date.
+    assert.equal(new ChronoPlain(parseISO('not a date')).isValid, false);
+    assert.equal(new ChronoPlain(parseISO('not a date')).toJSON(), null);
+  });
+
+  test('isValidInstant agrees, since it is now a public guard', async () => {
+    const { isValidInstant } = await import('../lib/brand.js');
+    for (const [, v] of BAD) assert.equal(isValidInstant(v), false, String(v));
+    assert.equal(isValidInstant(Date.now()), true);
+    assert.equal(isValidInstant(8.64e15), true);
+  });
+});
+
+describe('the system zone cache is bounded', () => {
+  // Regression: the zone was cached forever. A host zone change - a laptop crossing a
+  // border, TZ reassigned in a process - left every Now.* reading silently wrong; measured
+  // seven hours out while Date was correct.
+  // Restoring must handle TZ having been unset: `process.env.TZ = undefined` stores the
+  // STRING "undefined", which Intl resolves to Etc/Unknown and every later test then fails
+  // against.
+  const original = process.env.TZ;
+  const restore = () => {
+    if (original === undefined) delete process.env.TZ;
+    else process.env.TZ = original;
+    Now.refreshTimeZone();
+  };
+
+  test('a zone change is picked up once the window passes', () => {
+    process.env.TZ = 'Europe/Bratislava';
+    Now.refreshTimeZone();
+    assert.equal(Now.timeZoneId(), 'Europe/Bratislava');
+
+    process.env.TZ = 'Asia/Tokyo';
+    assert.equal(Now.timeZoneId(), 'Europe/Bratislava', 'still cached inside the window');
+    assert.equal(Now.timeZoneId(Date.now() + 1001), 'Asia/Tokyo', 're-read past the window');
+
+    restore();
+  });
+
+  test('refreshTimeZone does not wait for the window', () => {
+    process.env.TZ = 'Europe/Bratislava';
+    Now.refreshTimeZone();
+    Now.timeZoneId();
+    process.env.TZ = 'America/New_York';
+    Now.refreshTimeZone();
+    assert.equal(Now.timeZoneId(), 'America/New_York');
+    restore();
+  });
+
+  test('a clock that jumps backwards still re-reads rather than trusting forever', () => {
+    Now.refreshTimeZone();
+    const z = Now.timeZoneId();
+    assert.equal(typeof Now.timeZoneId(Date.now() - 10_000), 'string');
+    assert.equal(Now.timeZoneId(), z);
+  });
+});
+
+describe('Now.plainDateISO returns a date, not a midnight reading', () => {
+  test('it is a ChronoDate and cannot grow a time', () => {
+    const d = Now.plainDateISO();
+    assert.ok(d instanceof ChronoDate);
+    for (const f of ['hour', 'minute', 'addHours', 'epochMilliseconds']) {
+      assert.equal(f in d, false, f);
+    }
+  });
+
+  test('it still reads the right local date', () => {
+    assert.equal(Now.plainDateISO().toISODate(), new Date().toLocaleDateString('sv-SE'));
+    for (const tz of ['UTC', 'Pacific/Kiritimati', 'Pacific/Midway']) {
+      assert.equal(Now.plainDateISO(tz).toISODate(),
+                   new Date().toLocaleDateString('sv-SE', { timeZone: tz }), tz);
+    }
   });
 });

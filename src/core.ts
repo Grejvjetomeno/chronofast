@@ -160,6 +160,19 @@ export const isLeapYear = (y: number): boolean =>
 
 const NOT_A_TIME = Number.NaN as EpochMs;
 
+/** The ECMAScript time-value limit. Beyond it a timestamp is not a date, it is a number. */
+const MAX_TIME = 8.64e15;
+
+/**
+ * Whether `ms` can be serialised as a date at all.
+ *
+ * Written as `!(ms >= -MAX && ms <= MAX)` on purpose: every comparison with `NaN` is false,
+ * so one expression rejects NaN, both infinities, and anything outside the representable
+ * range. The earlier guard tested only `ms !== ms`, which let `Infinity` through to produce
+ * `"Infinity-03-NaNT00:00:00.NaN"` - a string that looks enough like a date to be stored.
+ */
+const outOfRange = (ms: number): boolean => !(ms >= -MAX_TIME && ms <= MAX_TIME);
+
 /**
  * The offset {@link parseISO} removed from the last string it read, in milliseconds, such
  * that the wall clock as written is `parseISO(s) + parsedOffsetMs`. Zero for `Z` and for
@@ -234,7 +247,12 @@ function parseISOGeneral(s: string, n: number): EpochMs {
 
   const c0 = s.charCodeAt(0);
   if (c0 === 43 || c0 === 45) {
-    if (n < 17) return NOT_A_TIME;
+    // An expanded year is a sign plus six digits, so the shortest legal string carrying one
+    // is `+YYYYYY-MM-DD` - thirteen characters. The bound was 17, which is the length of an
+    // expanded form *with a time*, so `toISODate()` emitted `-111122-05-09` and `parse()`
+    // then rejected the library's own output. Found by the differential suite; every field
+    // below is digit-checked individually, so a shorter minimum is safe.
+    if (n < 13) return NOT_A_TIME;
     let acc = 0;
     for (let k = 1; k < 7; k++) {
       const d = s.charCodeAt(k) - 48;
@@ -408,6 +426,14 @@ export const pad2 = (n: number): string => (n < 10 ? '0' + n : '' + n);
 /** Zero-pad to three digits. */
 export const pad3 = (n: number): string => (n < 10 ? '00' + n : n < 100 ? '0' + n : '' + n);
 /** Zero-pad to four digits. */
+/**
+ * Four-digit zero pad. **Only valid for 0..9999.**
+ *
+ * A negative input pads in front of the minus sign - `pad4(-1)` is `'000-1'` - so any
+ * caller formatting a year must route years outside that range through {@link year6},
+ * which emits the ISO expanded form (`-110091`, `+010000`). A differential run against
+ * Temporal caught `toPlainISOString` doing exactly this for pre-epoch expanded years.
+ */
 export const pad4 = (n: number): string =>
   n < 10 ? '000' + n : n < 100 ? '00' + n : n < 1000 ? '0' + n : '' + n;
 
@@ -464,7 +490,7 @@ function isoExtendedYear(rem: number): string {
  * Failing here, loudly, is the whole point.
  */
 export function toISO(ms: EpochMs): string {
-  if (ms !== ms) throw new RangeError('Invalid time value');
+  if (outOfRange(ms)) throw new RangeError('Invalid time value');
   const days = Math.floor(ms / MS_DAY);
   let rem = ms - days * MS_DAY;
   civilFromDays(days);
@@ -495,12 +521,12 @@ export function toISO(ms: EpochMs): string {
  * stores a day index rather than a timestamp, and it shares the same day-string memo.
  */
 export const isoDateOfDay = (dayIdx: DayIndex | number): string => {
-  if (dayIdx !== dayIdx) throw new RangeError('Invalid time value');
+  if (outOfRange(dayIdx * MS_DAY)) throw new RangeError('Invalid time value');
   return dayString(dayIdx);
 };
 
 export const toISODate = (ms: EpochMs): string => {
-  if (ms !== ms) throw new RangeError('Invalid time value');
+  if (outOfRange(ms)) throw new RangeError('Invalid time value');
   return dayString(Math.floor(ms / MS_DAY));
 };
 
@@ -821,3 +847,10 @@ export function resetMemos(): void {
   dayStrIdx = Number.NaN;
   dayStrVal = '';
 }
+
+/**
+ * Whether a millisecond value can be a date: finite, and inside the ECMAScript time range.
+ * `isValid` on every class routes through this, so `Infinity` reports invalid rather than
+ * claiming to be a date and then serialising as one.
+ */
+export const isRepresentable = (ms: number): boolean => !outOfRange(ms);

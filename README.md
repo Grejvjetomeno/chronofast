@@ -261,7 +261,7 @@ ChronoDate.now('Europe/Bratislava')      // today, in that zone
 | **Truncation** | `startOfWeek` `startOfMonth` `startOfYear` `endOfMonth` |
 | **Difference** | `daysUntil` `weeksUntil` `monthsUntil` `yearsUntil` |
 | **Convert** | `toPlain(h, mi, s, ms)` &nbsp;·&nbsp; `atTime(h, mi)` &nbsp;·&nbsp; `atStartOfDay(tz)` |
-| **Output** | `toISODate()` `toJSON()` `toLocaleDateString()` `dayIndex` |
+| **Output** | `toISODate()` `toJSON()` `toLocaleString()` `toLocaleDateString()` `dayIndex` |
 
 **No `hour`, no `addHours`.** Getting to a time is something you say out loud:
 
@@ -273,6 +273,11 @@ d.atTime(14, 30)                         // ChronoPlain at 14:30
 d.atStartOfDay('Europe/Bratislava')      // ChronoZoned — a real moment, DST-correct
 d.addDays(7).toISODate()                 // '2024-03-22'
 ```
+
+It refuses to *render* a time as well. `d.toLocaleString('sk-SK', { hour: '2-digit' })`
+throws a `TypeError` rather than answering `'00'`, and there is no `toLocaleTimeString` —
+both matching `Temporal.PlainDate`. Answering with midnight would be the same
+plausible-looking wrong answer the missing `hour` getter exists to prevent.
 
 It is stored as a day index rather than a timestamp, so `b - a` is whole days and sorting
 compares small integers.
@@ -313,7 +318,7 @@ import { Now } from 'chronofast';
 Now.instant()               // the moment, no fields              -> 07:07 in UTC terms
 Now.plainDateTimeISO()      // the local wall clock, no zone       -> 09:07
 Now.zonedDateTimeISO()      // the local wall clock, with its zone -> 09:07+02:00
-Now.plainDateISO()          // today's local date, at midnight
+Now.plainDateISO()          // today's local date, as a ChronoDate
 Now.timeZoneId()            // 'Europe/Bratislava'
 Now.minutesSinceMidnight()  // 547
 ```
@@ -321,10 +326,14 @@ Now.minutesSinceMidnight()  // 547
 Every method takes an optional zone and defaults to the system one. The names mirror
 `Temporal.Now` on purpose, so migrating is a rename.
 
-Two things to know. `ChronoInstant.now()` is still UTC — correct for storage, comparison and
-audit trails, wrong for anything a user reads. And `Now.plainDateISO()` returns a
-`ChronoPlain` pinned to midnight, not a `ChronoDate`; for a value that cannot carry a time
-at all, use `ChronoDate.now(tz)`.
+One thing to know: `ChronoInstant.now()` is still UTC — correct for storage, comparison and
+audit trails, wrong for anything a user reads.
+
+`Now.plainDateISO()` returns a `ChronoDate`, matching `Temporal.Now.plainDateISO()`.
+Until 1.0.2 it returned a `ChronoPlain` pinned to midnight, which meant
+`Now.plainDateISO().addHours(5)` compiled and gave back a value that was no longer a date.
+If you want a midnight *reading* rather than a date, say so:
+`Now.plainDateTimeISO(tz).startOfDay()`.
 
 A wall-clock reading serialises with `toPlainISOString()`, which omits the `Z` rather than
 claiming an offset the value does not have:
@@ -643,12 +652,14 @@ Node build compiled with `small-icu`, only UTC will resolve.
 ## Testing
 
 ```bash
-npm test                  # build, then every suite below
-npm run test:unit         # 305 assertions, ~0.5s
-npm run test:differential # the wide sweeps against Date and Temporal
-npm run test:legacy       # the Intl fallback path, on a simulated old engine
-npm run test:bundle       # the minified browser builds
-npm run release:check     # 39 publish preconditions
+npm test                     # build, then every suite below
+npm run test:unit            # 551 assertions across 71 suites, ~0.5s
+npm run test:differential    # the wide sweep against Date
+npm run test:temporal        # 724k checks against Temporal, ~3s
+npm run test:temporal:deep   # 5.5M checks, every IANA zone, ~35s
+npm run test:legacy          # the Intl fallback path, on a simulated old engine
+npm run test:bundle          # the minified browser builds
+npm run release:check        # 76 publish preconditions
 ```
 
 | Suite | What it protects |
@@ -660,12 +671,42 @@ npm run release:check     # 39 publish preconditions
 | `zone.test.js` | Known offsets, DST transitions resolved to the second, cache-vs-uncached agreement hourly across two years for twelve zones, and order-independence: forwards, backwards, shuffled, and with several zones interleaved. |
 | `api.test.js` | The published contract. Exact export list, exact method and getter names, no internals leaking, every error type reachable, immutability of every method. |
 | `perf-smoke.test.js` | A catastrophe detector with ~20× headroom. Catches a cache that stopped caching or an accidental O(n) scan; deliberately asserts no timing ratios. |
+| `invalid.test.js` | That a value which cannot be a date never serialises to something date-shaped. `NaN`, both infinities and anything outside the ECMAScript range, on every type and every output method — the guard here once tested only `NaN`, and `Infinity` produced `"Infinity-03-NaNT00:00:00.NaN"`. Also pins the fail-closed parse contract and the bounded zone cache. |
+| `date.test.js` | `ChronoDate` against `Temporal.PlainDate` — every field, arithmetic across ±240 months and ±240 years, end-of-month clamping, and the absences: no `hour`, no `addHours`, no `toLocaleTimeString`. |
+| `locale.test.js` | Locale output against Temporal across seven locales and every option shape. Asserts the methods are *defined* rather than inherited: `Object.prototype.toLocaleString` exists on everything and silently returns the ISO string, so feature detection cannot see it missing. |
 
 Two suites run outside the unit runner because they need a modified environment:
 `test/verify-legacy-intl.js` patches `Intl.DateTimeFormat` to throw exactly as a pre-2021
 engine does and cross-checks the fallback against the fast path across eight zones, and
 `scripts/verify-browser-bundle.js` exercises the **minified** artefacts including 20,000
 differential samples against `Date`.
+
+### The differential suite
+
+`test/differential-temporal.js` is the one that finds things nobody thought to write a test
+for. The claim being made — the same answers as `Temporal`, faster — is mechanically
+checkable, so it is checked mechanically: generate inputs, run both, assert equality.
+
+```
+npm run test:temporal          724,360 checks, ~3s
+npm run test:temporal:deep   5,552,192 checks, all 418 IANA zones, ~35s
+```
+
+Seven sections: UTC engine fields, calendar arithmetic, offsets across every zone the host
+knows, **real DST transitions located with `getTimeZoneTransition`** and probed at ±1 ms,
+±1 s, ±1 min and ±1 h, all four disambiguation modes at genuine gaps and overlaps, round
+trips, and locale output. Sampling is deliberately biased — three quarters into the era real
+data lives in, with a tail to the range extremes — and transitions are *found* rather than
+guessed, because DST defects live within a second of a boundary and uniform sampling never
+reaches them. Every failure prints the input needed to reproduce it.
+
+It also knows about two things that are not defects. chronofast reads offsets from the
+host's `Intl`; `temporal-polyfill` carries its own copy of the tz database, and the two
+genuinely differ for Morocco, Cairo and Rio Gallegos, where DST follows a lunar calendar
+that different tzdb snapshots project differently. Separately, V8's native `Temporal`
+differs from `Date` itself on formatting options. In both cases siding with the platform is
+the intended behaviour, so those are reported separately rather than failed — otherwise the
+suite would cry wolf on every tz-data bump and someone would eventually switch it off.
 
 Everything is deterministic — a seeded LCG, no `Date.now()`, no `Math.random()` — so a
 failure reproduces from the test name alone.

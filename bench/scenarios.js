@@ -448,4 +448,57 @@ export const SCENARIOS = [
       },
     },
   },
+
+  // ================================================================ LOCALE FORMATTING
+  {
+    id: 'locale-datetime', group: 'Locale formatting', returns: 'string',
+    name: 'Format a wall clock as localised date+time (sk-SK)',
+    note: 'The UI render path. Every contender goes through Intl; what differs is how much ' +
+          'work happens before Intl and whether the formatter is rebuilt each call.',
+    impls: {
+      date: () => (i) => new Date(MS[i & MASK]).toLocaleString('sk-SK', { timeZone: 'UTC' }),
+      chronoRaw: (C) => (i) => C.formatLocale(MS[i & MASK], 'UTC', 'sk-SK', undefined, 0),
+      chronoObj: (C) => (i) => new C.ChronoPlain(MS[i & MASK]).toLocaleString('sk-SK'),
+      dayjs: (D) => (i) => D.utc(MS[i & MASK]).toDate().toLocaleString('sk-SK', { timeZone: 'UTC' }),
+      temporal: (T) => (i) =>
+        T.Instant.fromEpochMilliseconds(MS[i & MASK]).toZonedDateTimeISO('UTC')
+          .toPlainDateTime().toLocaleString('sk-SK'),
+    },
+  },
+  {
+    id: 'locale-date', group: 'Locale formatting', returns: 'string',
+    name: 'Format a date as localised long-month text (sk-SK)',
+    note: "{ day: 'numeric', month: 'long', year: 'numeric' } - the shape a UI actually asks for.",
+    impls: {
+      date: () => (i) => new Date(MS[i & MASK]).toLocaleDateString('sk-SK',
+        { timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric' }),
+      chronoRaw: (C) => (i) => C.formatLocale(MS[i & MASK], 'UTC', 'sk-SK',
+        { day: 'numeric', month: 'long', year: 'numeric' }, 1),
+      chronoObj: (C) => (i) => new C.ChronoDate(Math.floor(MS[i & MASK] / 86400000))
+        .toLocaleDateString('sk-SK', { day: 'numeric', month: 'long', year: 'numeric' }),
+      dayjs: (D) => (i) => D.utc(MS[i & MASK]).toDate().toLocaleDateString('sk-SK',
+        { timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric' }),
+      temporal: (T) => (i) =>
+        T.Instant.fromEpochMilliseconds(MS[i & MASK]).toZonedDateTimeISO('UTC').toPlainDate()
+          .toLocaleString('sk-SK', { day: 'numeric', month: 'long', year: 'numeric' }),
+    },
+  },
+  {
+    id: 'locale-zoned', group: 'Locale formatting', returns: 'string',
+    name: `Format an instant as localised text in ${TZ}`,
+    note: 'Explicit options on every side, so the defaults cannot diverge.',
+    impls: {
+      date: () => (i) => new Date(MS_DST[i & MASK]).toLocaleString('sk-SK',
+        { timeZone: TZ, dateStyle: 'short', timeStyle: 'medium' }),
+      chronoRaw: (C) => (i) => C.formatLocale(MS_DST[i & MASK], TZ, 'sk-SK',
+        { dateStyle: 'short', timeStyle: 'medium' }, 0),
+      chronoObj: (C) => (i) => new C.ChronoZoned(MS_DST[i & MASK], TZ)
+        .toLocaleString('sk-SK', { dateStyle: 'short', timeStyle: 'medium' }),
+      dayjs: (D) => (i) => D(MS_DST[i & MASK]).toDate().toLocaleString('sk-SK',
+        { timeZone: TZ, dateStyle: 'short', timeStyle: 'medium' }),
+      temporal: (T) => (i) =>
+        T.Instant.fromEpochMilliseconds(MS_DST[i & MASK]).toZonedDateTimeISO(TZ)
+          .toLocaleString('sk-SK', { dateStyle: 'short', timeStyle: 'medium' }),
+    },
+  },
 ];
