@@ -39,7 +39,9 @@ const bad = (m) => { if (fails++ < 25) console.log('  FAIL ' + m); };
     if (chrono.getMinute(ms) !== d.getUTCMinutes()) bad(`chrono.getMinute ${ms}`);
     if (chrono.getSecond(ms) !== d.getUTCSeconds()) bad(`chrono.getSecond ${ms}`);
     if (chrono.getMillisecond(ms) !== d.getUTCMilliseconds()) bad(`chrono.getMillisecond ${ms}`);
-    if (chrono.dayOfWeek(ms) !== d.getUTCDay()) bad(`chrono.dayOfWeek ${ms}`);
+    // dayOfWeek is ISO (1=Mon..7=Sun); the Date-compatible variant is dayOfWeekSunday0.
+    if (chrono.dayOfWeekSunday0(ms) !== d.getUTCDay()) bad(`dayOfWeekSunday0 ${ms}`);
+    if (chrono.dayOfWeek(ms) !== ((d.getUTCDay() + 6) % 7) + 1) bad(`dayOfWeek ISO ${ms}`);
   }
   console.log(`  [1] UTC engine vs native Date over ${N} random instants: ${fails === 0 ? 'OK' : fails + ' failures'}`);
 }

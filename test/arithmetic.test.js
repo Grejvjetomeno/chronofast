@@ -9,7 +9,7 @@ import {
   startOfMinute, startOfHour, startOfDay, startOfWeek, startOfMonth, startOfYear,
   diffDays, diffMonths, diffYears, toISO, toISODate, parseISO, compare, min, max,
 } from '../lib/core.js';
-import { ChronoInstant } from '../lib/index.js';
+import { ChronoInstant, ChronoPlain } from '../lib/index.js';
 import { scattered, utc, MS_DAY, MS_HOUR, MS_MIN, MS_SEC } from './helpers.js';
 
 const at = (s) => parseISO(s);
@@ -182,38 +182,48 @@ describe('comparison helpers', () => {
   });
 });
 
-describe('ChronoInstant arithmetic is immutable and chainable', () => {
-  test('methods return new instances and never mutate', () => {
+describe('the classes are immutable and chainable', () => {
+  test('ChronoInstant exact-time methods return new instances and never mutate', () => {
     const t = ChronoInstant.parse('2024-03-15T10:30:00.000Z');
     const before = t.ms;
-    const ops = ['addMilliseconds', 'addSeconds', 'addMinutes', 'addHours', 'addDays',
-                 'addWeeks', 'addMonths', 'addYears'];
-    for (const op of ops) {
+    for (const op of ['addMilliseconds', 'addSeconds', 'addMinutes', 'addHours', 'addDays']) {
       const r = t[op](3);
       assert.notEqual(r, t, `${op} returned the same object`);
       assert.equal(t.ms, before, `${op} mutated the receiver`);
       assert.ok(r instanceof ChronoInstant);
     }
+  });
+
+  test('ChronoPlain calendar methods return new instances and never mutate', () => {
+    const p = ChronoPlain.parse('2024-03-15T10:30:00.000');
+    const before = p.wall;
+    for (const op of ['addMilliseconds', 'addSeconds', 'addMinutes', 'addHours', 'addDays',
+                      'addWeeks', 'addMonths', 'addYears']) {
+      const r = p[op](3);
+      assert.notEqual(r, p, `${op} returned the same object`);
+      assert.equal(p.wall, before, `${op} mutated the receiver`);
+      assert.ok(r instanceof ChronoPlain);
+    }
     for (const op of ['startOfMinute', 'startOfHour', 'startOfDay', 'startOfWeek', 'startOfMonth', 'startOfYear']) {
-      const r = t[op]();
-      assert.notEqual(r, t, `${op} returned the same object`);
-      assert.equal(t.ms, before, `${op} mutated the receiver`);
+      const r = p[op]();
+      assert.notEqual(r, p, `${op} returned the same object`);
+      assert.equal(p.wall, before, `${op} mutated the receiver`);
     }
   });
 
   test('chains compose', () => {
-    const r = ChronoInstant.parse('2024-01-31T10:30:00.000Z').addMonths(1).addDays(1).startOfDay();
-    assert.equal(r.toISOString(), '2024-03-01T00:00:00.000Z');
+    const r = ChronoPlain.parse('2024-01-31T10:30:00.000').addMonths(1).addDays(1).startOfDay();
+    assert.equal(r.toPlainISOString(), '2024-03-01T00:00:00');
   });
 
   test('daysUntil and monthsUntil', () => {
-    const a2 = ChronoInstant.parse('2024-01-01T00:00:00.000Z');
-    const b2 = ChronoInstant.parse('2024-03-15T00:00:00.000Z');
+    const a2 = ChronoPlain.parse('2024-01-01T00:00:00.000');
+    const b2 = ChronoPlain.parse('2024-03-15T00:00:00.000');
     assert.equal(a2.daysUntil(b2), 74);
     assert.equal(a2.monthsUntil(b2), 2);
   });
 
-  test('equals / isBefore / isAfter', () => {
+  test('equals / isBefore / isAfter on moments', () => {
     const a2 = ChronoInstant.parse('2024-01-01T00:00:00.000Z');
     const b2 = ChronoInstant.parse('2024-03-15T00:00:00.000Z');
     assert.ok(a2.isBefore(b2));

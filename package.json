@@ -33,7 +33,7 @@
     "build": "npm run clean && tsc --project tsconfig.build.json && node scripts/build-browser.js",
     "build:browser": "node scripts/build-browser.js",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && npm run test:unit && npm run test:differential && npm run test:legacy && npm run test:bundle",
+    "test": "npm run build && npm run test:types && npm run test:unit && npm run test:differential && npm run test:legacy && npm run test:bundle",
     "bench": "npm run build && node --expose-gc bench/main.js --tag node --alloc",
     "bench:temporal": "node --expose-gc --harmony-temporal bench/main.js --tag node-temporal --alloc",
     "bench:bun": "bun bench/main.js --tag bun --alloc",
@@ -41,11 +41,12 @@
     "report": "node bench/report/merge.js && node bench/report/artifact.js",
     "size": "node scripts/size.js",
     "release:check": "node scripts/prepublish-check.js",
-    "prepublishOnly": "npm run build && npm run test:unit && npm run test:differential && npm run test:legacy && npm run test:bundle && node scripts/prepublish-check.js",
+    "prepublishOnly": "npm run build && npm run test:types && npm run test:unit && npm run test:differential && npm run test:legacy && npm run test:bundle && node scripts/prepublish-check.js",
     "test:unit": "node --test test/*.test.js",
     "test:differential": "node test/verify.js",
     "test:legacy": "node test/verify-legacy-intl.js",
-    "test:bundle": "node scripts/verify-browser-bundle.js"
+    "test:bundle": "node scripts/verify-browser-bundle.js",
+    "test:types": "tsc --noEmit -p tsconfig.types-test.json"
   },
   "repository": {
     "type": "git",
@@ -79,6 +80,7 @@
   "homepage": "https://github.com/brunolau/chronofast",
   "devDependencies": {
     "@js-temporal/polyfill": "^0.5.1",
+    "dayjs": "^1.11.23",
     "esbuild": "^0.28.2",
     "temporal-polyfill": "^1.0.4",
     "typescript": "^6.0.3"

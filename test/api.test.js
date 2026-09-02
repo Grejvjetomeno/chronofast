@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import * as api from '../lib/index.js';
 import {
-  ChronoInstant, ChronoZoned,
+  ChronoInstant, ChronoPlain, ChronoZoned,
   InvalidInstantError, UnknownTimeZoneError, AmbiguousTimeError,
 } from '../lib/index.js';
 
@@ -17,8 +17,10 @@ describe('public surface', () => {
   const EXPECTED_EXPORTS = [
     'AmbiguousTimeError',
     'ChronoInstant',
+    'ChronoPlain',
     'ChronoZoned',
     'InvalidInstantError',
+    'Now',
     'UnknownTimeZoneError',
   ];
 
@@ -27,7 +29,7 @@ describe('public surface', () => {
   });
 
   test('the raw function layer is not reachable from the entry point', () => {
-    for (const internal of ['parseISO', 'toISO', 'toISODate', 'addDays', 'addMonths',
+    for (const internal of ['parseISO', 'toISO', 'addMonths',
                             'startOfDay', 'offsetAt', 'utcFromWall', 'civilFromDays',
                             'daysFromCivil', 'unpack', 'cY', 'cM', 'cD',
                             'epochMs', 'timeZone', 'zoneStats', 'resetZoneCaches']) {
@@ -71,17 +73,15 @@ describe('public surface', () => {
 });
 
 describe('ChronoInstant method surface', () => {
+  // A moment carries no calendar fields on purpose: that is what stops it impersonating
+  // a ChronoPlain. See test/types.negative.ts, which asserts the absences compile-fail.
   const EXPECTED = [
-    'addDays', 'addHours', 'addMilliseconds', 'addMinutes', 'addMonths', 'addSeconds',
-    'addWeeks', 'addYears', 'constructor', 'daysUntil', 'equals', 'fields', 'inZone',
-    'isAfter', 'isBefore', 'monthsUntil', 'startOfDay', 'startOfHour', 'startOfMinute',
-    'startOfMonth', 'startOfWeek', 'startOfYear', 'toDate', 'toISODate', 'toISOString',
-    'toJSON', 'toString', 'valueOf',
+    'addDays', 'addHours', 'addMilliseconds', 'addMinutes', 'addSeconds',
+    'constructor', 'daysUntil', 'equals', 'hoursUntil', 'inZone', 'isAfter', 'isBefore',
+    'millisecondsUntil', 'minutesUntil', 'secondsUntil',
+    'toDate', 'toISODate', 'toISOString', 'toJSON', 'toString', 'toUtcPlain', 'valueOf',
   ];
-  const GETTERS = [
-    'day', 'dayOfWeek', 'dayOfYear', 'epochMilliseconds', 'hour', 'isValid',
-    'millisecond', 'minute', 'month', 'second', 'weekOfYear', 'weekYear', 'year',
-  ];
+  const GETTERS = ['epochMilliseconds', 'isValid'];
 
   test('methods are exactly as documented', () => {
     const names = Object.getOwnPropertyNames(ChronoInstant.prototype)
@@ -99,6 +99,13 @@ describe('ChronoInstant method surface', () => {
     const names = Object.getOwnPropertyNames(ChronoInstant)
       .filter((n) => !['length', 'name', 'prototype'].includes(n));
     assert.deepEqual(names.sort(), ['compare', 'fromDate', 'fromEpochMs', 'now', 'parse']);
+  });
+
+  test('a moment exposes no calendar field at runtime either', () => {
+    const t = ChronoInstant.parse('2024-03-15T10:30:00.000Z');
+    for (const f of ['year', 'month', 'day', 'hour', 'minute', 'second', 'dayOfWeek']) {
+      assert.equal(f in t, false, `${f} leaked onto ChronoInstant`);
+    }
   });
 
   test('instances carry a single own field', () => {
@@ -119,11 +126,30 @@ describe('ChronoInstant method surface', () => {
   });
 });
 
+describe('ChronoPlain method surface', () => {
+  test('a reading exposes no moment at runtime either', () => {
+    const p = ChronoPlain.parse('2024-03-15T10:30');
+    for (const f of ['epochMilliseconds', 'toDate', 'inZone', 'toISOString']) {
+      assert.equal(f in p, false, `${f} leaked onto ChronoPlain`);
+    }
+  });
+
+  test('statics are exactly as documented', () => {
+    const names = Object.getOwnPropertyNames(ChronoPlain)
+      .filter((n) => !['length', 'name', 'prototype'].includes(n));
+    assert.deepEqual(names.sort(), ['compare', 'now', 'of', 'parse']);
+  });
+
+  test('instances carry a single own field, named so it cannot pass for a timestamp', () => {
+    assert.deepEqual(Object.keys(ChronoPlain.parse('2024-03-15T10:30')), ['wall']);
+  });
+});
+
 describe('ChronoZoned method surface', () => {
   test('statics are exactly as documented', () => {
     const names = Object.getOwnPropertyNames(ChronoZoned)
       .filter((n) => !['length', 'name', 'prototype'].includes(n));
-    assert.deepEqual(names.sort(), ['fromEpochMs', 'fromLocal', 'parse']);
+    assert.deepEqual(names.sort(), ['compare', 'fromEpochMs', 'fromLocal', 'now', 'parse']);
   });
 
   test('instances carry exactly two own fields', () => {
@@ -190,10 +216,25 @@ describe('immutability', () => {
       if (typeof desc.value !== 'function' || name === 'constructor') continue;
       try {
         if (name === 'inZone') t.inZone('UTC');
-        else if (['daysUntil', 'monthsUntil', 'equals', 'isBefore', 'isAfter'].includes(name)) t[name](t);
+        else if (['millisecondsUntil', 'equals', 'isBefore', 'isAfter'].includes(name)) t[name](t);
         else t[name](1);
       } catch { /* argument shape mismatch is fine; we only care about mutation */ }
       assert.equal(t.ms, snapshot, `${name} mutated the receiver`);
+    }
+  });
+
+  test('ChronoPlain never mutates through any method', () => {
+    const p = ChronoPlain.parse('2024-03-15T10:30');
+    const snapshot = p.wall;
+    for (const name of Object.getOwnPropertyNames(ChronoPlain.prototype)) {
+      const desc = Object.getOwnPropertyDescriptor(ChronoPlain.prototype, name);
+      if (typeof desc.value !== 'function' || name === 'constructor') continue;
+      try {
+        if (name === 'assumeZone') p.assumeZone('UTC');
+        else if (['daysUntil', 'monthsUntil', 'equals', 'isBefore', 'isAfter'].includes(name)) p[name](p);
+        else p[name](1);
+      } catch { /* ignore */ }
+      assert.equal(p.wall, snapshot, `${name} mutated the receiver`);
     }
   });
 

@@ -31,7 +31,8 @@ export const SCENARIOS = [
     impls: {
       date: () => (i) => Date.parse(ISO_UTC[i & MASK]),
       chronoRaw: (C) => (i) => C.parseISO(ISO_UTC[i & MASK]),
-      chronoObj: (C) => (i) => (C.ChronoInstant || C.ChronoDateTime).parse(ISO_UTC[i & MASK]).ms,
+      dayjs: (D) => (i) => D.utc(ISO_UTC[i & MASK]).valueOf(),
+      chronoObj: (C) => (i) => C.ChronoInstant.parse(ISO_UTC[i & MASK]).ms,
       temporal: (T) => (i) => T.Instant.from(ISO_UTC[i & MASK]).epochMilliseconds,
     },
   },
@@ -42,7 +43,8 @@ export const SCENARIOS = [
     impls: {
       date: () => (i) => Date.parse(ISO_OFF[i & MASK]),
       chronoRaw: (C) => (i) => C.parseISO(ISO_OFF[i & MASK]),
-      chronoObj: (C) => (i) => (C.ChronoInstant || C.ChronoDateTime).parse(ISO_OFF[i & MASK]).ms,
+      dayjs: (D) => (i) => D.utc(ISO_OFF[i & MASK]).valueOf(),
+      chronoObj: (C) => (i) => C.ChronoInstant.parse(ISO_OFF[i & MASK]).ms,
       temporal: (T) => (i) => T.Instant.from(ISO_OFF[i & MASK]).epochMilliseconds,
     },
   },
@@ -55,7 +57,8 @@ export const SCENARIOS = [
     impls: {
       date: () => (i) => new Date(MS[i & MASK]).toISOString(),
       chronoRaw: (C) => (i) => C.toISO(MS[i & MASK]),
-      chronoObj: (C) => (i) => new (C.ChronoInstant || C.ChronoDateTime)(MS[i & MASK]).toISOString(),
+      dayjs: (D) => (i) => D.utc(MS[i & MASK]).toISOString(),
+      chronoObj: (C) => (i) => new C.ChronoInstant(MS[i & MASK]).toISOString(),
       temporal: (T) => (i) => T.Instant.fromEpochMilliseconds(MS[i & MASK]).toString(FSD),
     },
   },
@@ -66,6 +69,8 @@ export const SCENARIOS = [
     impls: {
       date: () => (i) => new Date(MS[i & MASK]).toISOString().slice(0, 10),
       chronoRaw: (C) => (i) => C.toISODate(MS[i & MASK]),
+      chronoObj: (C) => (i) => new C.ChronoInstant(MS[i & MASK]).toISODate(),
+      dayjs: (D) => (i) => D.utc(MS[i & MASK]).format('YYYY-MM-DD'),
       temporal: (T) => (i) =>
         T.Instant.fromEpochMilliseconds(MS[i & MASK]).toZonedDateTimeISO('UTC').toPlainDate().toString(),
     },
@@ -79,7 +84,8 @@ export const SCENARIOS = [
     impls: {
       date: () => (i) => { const d = new Date(MS[i & MASK]); d.setUTCDate(d.getUTCDate() + 7); return d.getTime(); },
       chronoRaw: (C) => (i) => C.addDays(MS[i & MASK], 7),
-      chronoObj: (C) => (i) => new (C.ChronoInstant || C.ChronoDateTime)(MS[i & MASK]).addDays(7).ms,
+      dayjs: (D) => (i) => D.utc(MS[i & MASK]).add(7, 'day').valueOf(),
+      chronoObj: (C) => (i) => new C.ChronoInstant(MS[i & MASK]).addDays(7).ms,
       temporal: (T) => (i) =>
         T.Instant.fromEpochMilliseconds(MS[i & MASK]).toZonedDateTimeISO('UTC').add({ days: 7 }).epochMilliseconds,
     },
@@ -101,7 +107,8 @@ export const SCENARIOS = [
                         d.getUTCSeconds(), d.getUTCMilliseconds());
       },
       chronoRaw: (C) => (i) => C.addMonths(MS[i & MASK], 1),
-      chronoObj: (C) => (i) => new (C.ChronoInstant || C.ChronoDateTime)(MS[i & MASK]).addMonths(1).ms,
+      dayjs: (D) => (i) => D.utc(MS[i & MASK]).add(1, 'month').valueOf(),
+      chronoObj: (C) => (i) => new C.ChronoPlain(MS[i & MASK]).addMonths(1).wall,
       temporal: (T) => (i) =>
         T.Instant.fromEpochMilliseconds(MS[i & MASK]).toZonedDateTimeISO('UTC').add({ months: 1 }).epochMilliseconds,
     },
@@ -113,7 +120,8 @@ export const SCENARIOS = [
     impls: {
       date: () => (i) => { const d = new Date(MS[i & MASK]); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); },
       chronoRaw: (C) => (i) => C.startOfDay(MS[i & MASK]),
-      chronoObj: (C) => (i) => new (C.ChronoInstant || C.ChronoDateTime)(MS[i & MASK]).startOfDay().ms,
+      dayjs: (D) => (i) => D.utc(MS[i & MASK]).startOf('day').valueOf(),
+      chronoObj: (C) => (i) => new C.ChronoPlain(MS[i & MASK]).startOfDay().wall,
       temporal: (T) => (i) =>
         T.Instant.fromEpochMilliseconds(MS[i & MASK]).toZonedDateTimeISO('UTC').startOfDay().epochMilliseconds,
     },
@@ -128,6 +136,8 @@ export const SCENARIOS = [
                 Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate())) / 86400000;
       },
       chronoRaw: (C) => (i) => C.diffDays(MS[i & MASK], MS_B[i & MASK]),
+      chronoObj: (C) => (i) => new C.ChronoPlain(MS[i & MASK]).daysUntil(new C.ChronoPlain(MS_B[i & MASK])),
+      dayjs: (D) => (i) => D.utc(MS_B[i & MASK]).startOf('day').diff(D.utc(MS[i & MASK]).startOf('day'), 'day'),
       temporal: (T) => (i) => {
         const a = T.Instant.fromEpochMilliseconds(MS[i & MASK]).toZonedDateTimeISO('UTC').toPlainDate();
         const b = T.Instant.fromEpochMilliseconds(MS_B[i & MASK]).toZonedDateTimeISO('UTC').toPlainDate();
@@ -144,7 +154,8 @@ export const SCENARIOS = [
           'first because it is mutable; the immutable libraries do not.',
     impls: {
       date: () => { const a = MS.map((m) => new Date(m)); return (i) => { const d = new Date(a[i & MASK]); d.setUTCDate(d.getUTCDate() + 7); return d.getTime(); }; },
-      chronoObj: (C) => { const a = MS.map((m) => new (C.ChronoInstant || C.ChronoDateTime)(m)); return (i) => a[i & MASK].addDays(7).ms; },
+      chronoObj: (C) => { const a = MS.map((m) => new C.ChronoInstant(m)); return (i) => a[i & MASK].addDays(7).ms; },
+      dayjs: (D) => { const a = MS.map((m) => D.utc(m)); return (i) => a[i & MASK].add(7, 'day').valueOf(); },
       temporal: (T) => {
         const a = MS.map((m) => T.Instant.fromEpochMilliseconds(m).toZonedDateTimeISO('UTC'));
         return (i) => a[i & MASK].add({ days: 7 }).epochMilliseconds;
@@ -168,7 +179,8 @@ export const SCENARIOS = [
                           d.getUTCSeconds(), d.getUTCMilliseconds());
         };
       },
-      chronoObj: (C) => { const a = MS.map((m) => new (C.ChronoInstant || C.ChronoDateTime)(m)); return (i) => a[i & MASK].addMonths(1).ms; },
+      chronoObj: (C) => { const a = MS.map((m) => new C.ChronoPlain(m)); return (i) => a[i & MASK].addMonths(1).wall; },
+      dayjs: (D) => { const a = MS.map((m) => D.utc(m)); return (i) => a[i & MASK].add(1, 'month').valueOf(); },
       temporal: (T) => {
         const a = MS.map((m) => T.Instant.fromEpochMilliseconds(m).toZonedDateTimeISO('UTC'));
         return (i) => a[i & MASK].add({ months: 1 }).epochMilliseconds;
@@ -192,6 +204,15 @@ export const SCENARIOS = [
         C.unpack(MS[i & MASK]);
         return ((C.cY * 10000 + C.cM * 100 + C.cD) * 100000) + C.cH * 3600 + C.cMi * 60 + C.cS;
       },
+      chronoObj: (C) => (i) => {
+        const p = new C.ChronoPlain(MS[i & MASK]);
+        return ((p.year * 10000 + p.month * 100 + p.day) * 100000) + p.hour * 3600 + p.minute * 60 + p.second;
+      },
+      dayjs: (D) => (i) => {
+        const d = D.utc(MS[i & MASK]);
+        return ((d.year() * 10000 + (d.month() + 1) * 100 + d.date()) * 100000) +
+               d.hour() * 3600 + d.minute() * 60 + d.second();
+      },
       temporal: (T) => (i) => {
         const z = T.Instant.fromEpochMilliseconds(MS[i & MASK]).toZonedDateTimeISO('UTC');
         return ((z.year * 10000 + z.month * 100 + z.day) * 100000) + z.hour * 3600 + z.minute * 60 + z.second;
@@ -204,6 +225,8 @@ export const SCENARIOS = [
     impls: {
       date: () => (i) => ((new Date(MS[i & MASK]).getUTCDay() + 6) % 7) + 1,
       chronoRaw: (C) => (i) => ((C.dayOfWeek(MS[i & MASK]) + 6) % 7) + 1,
+      chronoObj: (C) => (i) => new C.ChronoPlain(MS[i & MASK]).dayOfWeek,
+      dayjs: (D) => (i) => D.utc(MS[i & MASK]).isoWeekday(),
       temporal: (T) => (i) => T.Instant.fromEpochMilliseconds(MS[i & MASK]).toZonedDateTimeISO('UTC').dayOfWeek,
     },
   },
@@ -220,6 +243,8 @@ export const SCENARIOS = [
         return Math.floor((th - jan1) / 604800000) + 1;
       },
       chronoRaw: (C) => (i) => C.isoWeek(MS[i & MASK]),
+      chronoObj: (C) => (i) => new C.ChronoPlain(MS[i & MASK]).weekOfYear,
+      dayjs: (D) => (i) => D.utc(MS[i & MASK]).isoWeek(),
       temporal: (T) => (i) =>
         T.Instant.fromEpochMilliseconds(MS[i & MASK]).toZonedDateTimeISO('UTC').toPlainDate().weekOfYear,
     },
@@ -233,6 +258,8 @@ export const SCENARIOS = [
     impls: {
       date: () => { const src = SORT_MS.map((m) => new Date(m)); return () => { const a = src.slice(); a.sort((x, y) => x - y); return a[0].getTime() ^ a[a.length - 1].getTime(); }; },
       chronoRaw: (C) => { const src = SORT_MS.slice(); return () => { const a = src.slice(); a.sort((x, y) => x - y); return a[0] ^ a[a.length - 1]; }; },
+      chronoObj: (C) => { const src = SORT_MS.map((m) => new C.ChronoInstant(m)); return () => { const a = src.slice(); a.sort(C.ChronoInstant.compare); return a[0].ms ^ a[a.length - 1].ms; }; },
+      dayjs: (D) => { const src = SORT_MS.map((m) => D.utc(m)); return () => { const a = src.slice(); a.sort((x, y) => x.valueOf() - y.valueOf()); return a[0].valueOf() ^ a[a.length - 1].valueOf(); }; },
       temporal: (T) => {
         const src = SORT_MS.map((m) => T.Instant.fromEpochMilliseconds(m));
         return () => { const a = src.slice(); a.sort(T.Instant.compare); return a[0].epochMilliseconds ^ a[a.length - 1].epochMilliseconds; };
@@ -248,7 +275,8 @@ export const SCENARIOS = [
     impls: {
       date: () => (i) => { const d = new Date(ISO_UTC[i & MASK]); d.setUTCDate(d.getUTCDate() + 30); return d.toISOString(); },
       chronoRaw: (C) => (i) => C.toISO(C.addDays(C.parseISO(ISO_UTC[i & MASK]), 30)),
-      chronoObj: (C) => (i) => (C.ChronoInstant || C.ChronoDateTime).parse(ISO_UTC[i & MASK]).addDays(30).toISOString(),
+      dayjs: (D) => (i) => D.utc(ISO_UTC[i & MASK]).add(30, 'day').toISOString(),
+      chronoObj: (C) => (i) => C.ChronoInstant.parse(ISO_UTC[i & MASK]).addDays(30).toISOString(),
       temporal: (T) => (i) =>
         T.Instant.from(ISO_UTC[i & MASK]).toZonedDateTimeISO('UTC').add({ days: 30 }).toInstant().toString(FSD),
     },
@@ -278,6 +306,26 @@ export const SCENARIOS = [
         for (const [key, v] of m) acc = (ckStr(key, acc) + v) | 0;
         return acc;
       },
+      chronoObj: (C) => () => {
+        const m = new Map();
+        for (let k = 0; k < BULK; k++) {
+          const key = C.ChronoInstant.parse(BULK_ISO[k]).toISODate();
+          m.set(key, (m.get(key) || 0) + 1);
+        }
+        let acc = m.size;
+        for (const [key, v] of m) acc = (ckStr(key, acc) + v) | 0;
+        return acc;
+      },
+      dayjs: (D) => () => {
+        const m = new Map();
+        for (let k = 0; k < BULK; k++) {
+          const key = D.utc(BULK_ISO[k]).format('YYYY-MM-DD');
+          m.set(key, (m.get(key) || 0) + 1);
+        }
+        let acc = m.size;
+        for (const [key, v] of m) acc = (ckStr(key, acc) + v) | 0;
+        return acc;
+      },
       temporal: (T) => () => {
         const m = new Map();
         for (let k = 0; k < BULK; k++) {
@@ -299,6 +347,8 @@ export const SCENARIOS = [
     impls: {
       date: () => (i) => dtz.tzOffsetMs(TZ, MS_DST[i & MASK]),
       chronoRaw: (C) => (i) => C.offsetAt(TZ, MS_DST[i & MASK]),
+      chronoObj: (C) => (i) => new C.ChronoZoned(MS_DST[i & MASK], TZ).offset,
+      dayjs: (D) => (i) => D(MS_DST[i & MASK]).tz(TZ).utcOffset() * 60000,
       temporal: (T) => (i) =>
         T.Instant.fromEpochMilliseconds(MS_DST[i & MASK]).toZonedDateTimeISO(TZ).offsetNanoseconds / 1e6,
     },
@@ -309,6 +359,7 @@ export const SCENARIOS = [
     impls: {
       date: () => (i) => dtz.formatZoned(TZ, MS_DST[i & MASK]),
       chronoRaw: (C) => (i) => C.formatZoned(TZ, MS_DST[i & MASK]),
+      dayjs: (D) => (i) => D(MS_DST[i & MASK]).tz(TZ).format('YYYY-MM-DDTHH:mm:ss.SSSZ'),
       chronoObj: (C) => (i) => new C.ChronoZoned(MS_DST[i & MASK], TZ).toISOString(),
       temporal: (T) => (i) =>
         T.Instant.fromEpochMilliseconds(MS_DST[i & MASK]).toZonedDateTimeISO(TZ).toString(ZFMT),
@@ -321,6 +372,7 @@ export const SCENARIOS = [
     impls: {
       date: () => (i) => dtz.addDaysZoned(TZ, MS_DST[i & MASK], 1),
       chronoRaw: (C) => (i) => C.addDaysZoned(TZ, MS_DST[i & MASK], 1),
+      dayjs: (D) => (i) => D(MS_DST[i & MASK]).tz(TZ).add(1, 'day').valueOf(),
       chronoObj: (C) => (i) => new C.ChronoZoned(MS_DST[i & MASK], TZ).addDays(1).ms,
       temporal: (T) => (i) =>
         T.Instant.fromEpochMilliseconds(MS_DST[i & MASK]).toZonedDateTimeISO(TZ).add({ days: 1 }).epochMilliseconds,
@@ -332,6 +384,8 @@ export const SCENARIOS = [
     impls: {
       date: () => (i) => dtz.startOfDayZoned(TZ, MS_DST[i & MASK]),
       chronoRaw: (C) => (i) => C.startOfDayZoned(TZ, MS_DST[i & MASK]),
+      chronoObj: (C) => (i) => new C.ChronoZoned(MS_DST[i & MASK], TZ).startOfDay().ms,
+      dayjs: (D) => (i) => D(MS_DST[i & MASK]).tz(TZ).startOf('day').valueOf(),
       temporal: (T) => (i) =>
         T.Instant.fromEpochMilliseconds(MS_DST[i & MASK]).toZonedDateTimeISO(TZ).startOfDay().epochMilliseconds,
     },
@@ -356,6 +410,26 @@ export const SCENARIOS = [
         const m = new Map();
         for (let k = 0; k < BULK; k++) {
           const key = C.toZonedISODate(TZ, BULK_MS[k]);
+          m.set(key, (m.get(key) || 0) + 1);
+        }
+        let acc = m.size;
+        for (const [key, v] of m) acc = (ckStr(key, acc) + v) | 0;
+        return acc;
+      },
+      chronoObj: (C) => () => {
+        const m = new Map();
+        for (let k = 0; k < BULK; k++) {
+          const key = new C.ChronoZoned(BULK_MS[k], TZ).toISODate();
+          m.set(key, (m.get(key) || 0) + 1);
+        }
+        let acc = m.size;
+        for (const [key, v] of m) acc = (ckStr(key, acc) + v) | 0;
+        return acc;
+      },
+      dayjs: (D) => () => {
+        const m = new Map();
+        for (let k = 0; k < BULK; k++) {
+          const key = D(BULK_MS[k]).tz(TZ).format('YYYY-MM-DD');
           m.set(key, (m.get(key) || 0) + 1);
         }
         let acc = m.size;

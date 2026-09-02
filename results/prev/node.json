@@ -1,0 +1,1429 @@
+{
+  "runtime": {
+    "engine": "V8 13.6.233.17",
+    "name": "Node",
+    "version": "24.13.0"
+  },
+  "nativeTemporal": false,
+  "tpIsNative": false,
+  "tag": "node",
+  "isolation": "process-per-measurement",
+  "contenders": [
+    {
+      "id": "date",
+      "label": "Native Date",
+      "kind": "date"
+    },
+    {
+      "id": "chrono-raw",
+      "label": "chronoFast (raw)",
+      "kind": "chronoRaw"
+    },
+    {
+      "id": "chrono-obj",
+      "label": "chronoFast (class)",
+      "kind": "chronoObj"
+    },
+    {
+      "id": "temporal-polyfill",
+      "label": "temporal-polyfill",
+      "kind": "temporal"
+    },
+    {
+      "id": "js-temporal",
+      "label": "@js-temporal/polyfill",
+      "kind": "temporal"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "parse-utc",
+      "name": "Parse ISO-8601 UTC string",
+      "group": "Parsing",
+      "note": "\"2024-03-15T10:30:00.123Z\" to epoch ms. The JSON/API hot path.",
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 6997831.657796176,
+          "medianNs": 142.90140845070422,
+          "minNs": 125.73239436619718,
+          "meanNs": 162.1258270081583,
+          "p99Ns": 237.7887323943662,
+          "rme": 2.367919935504755,
+          "samples": 347,
+          "iters": 7100,
+          "bytesPerOp": 16.82,
+          "relative": 0.2584921260704821
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 27071740.11129493,
+          "medianNs": 36.93888888888889,
+          "minNs": 35.21666666666667,
+          "meanNs": 42.41608888888887,
+          "p99Ns": 74.31666666666666,
+          "rme": 2.2761865753044006,
+          "samples": 500,
+          "iters": 18000,
+          "bytesPerOp": 16.82,
+          "relative": 1
+        },
+        "chrono-obj": {
+          "status": "ok",
+          "opsPerSec": 26011560.693641618,
+          "medianNs": 38.44444444444444,
+          "minNs": 36.388888888888886,
+          "meanNs": 48.357999999999976,
+          "p99Ns": 107.33333333333333,
+          "rme": 3.1463793237765056,
+          "samples": 500,
+          "iters": 1800,
+          "bytesPerOp": 16.82,
+          "relative": 0.9608381502890174
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 354861.60397445,
+          "medianNs": 2818,
+          "minNs": 2690,
+          "meanNs": 3266.524,
+          "p99Ns": 6266,
+          "rme": 2.59430726563504,
+          "samples": 500,
+          "iters": 100,
+          "bytesPerOp": 7119.1887323943665,
+          "relative": 0.0131081933601451
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 491642.08456243854,
+          "medianNs": 2034,
+          "minNs": 1839,
+          "meanNs": 2706.466,
+          "p99Ns": 17378,
+          "rme": 9.259345734696632,
+          "samples": 500,
+          "iters": 100,
+          "bytesPerOp": 2843.8901322482197,
+          "relative": 0.018160712334753634
+        }
+      }
+    },
+    {
+      "id": "parse-offset",
+      "name": "Parse ISO-8601 with UTC offset",
+      "group": "Parsing",
+      "note": "\"2024-03-15T12:30:00.123+02:00\" to epoch ms.",
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 6811509.101585437,
+          "medianNs": 146.81034482758622,
+          "minNs": 140.1206896551724,
+          "meanNs": 155.5291627834731,
+          "p99Ns": 236.23275862068965,
+          "rme": 1.862294093785826,
+          "samples": 222,
+          "iters": 11600,
+          "bytesPerOp": 16.82,
+          "relative": 0.39658119658119656
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 15669515.66951567,
+          "medianNs": 63.81818181818182,
+          "minNs": 53.72727272727273,
+          "meanNs": 82.46781818181822,
+          "p99Ns": 150.27272727272728,
+          "rme": 2.909534233302323,
+          "samples": 500,
+          "iters": 1100,
+          "bytesPerOp": 16.82,
+          "relative": 0.9123140234251346
+        },
+        "chrono-obj": {
+          "status": "ok",
+          "opsPerSec": 17175572.51908397,
+          "medianNs": 58.22222222222222,
+          "minNs": 54.22222222222222,
+          "meanNs": 62.01955555555559,
+          "p99Ns": 157.22222222222223,
+          "rme": 2.246902700254099,
+          "samples": 500,
+          "iters": 900,
+          "bytesPerOp": 16.82,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 294117.64705882355,
+          "medianNs": 3400,
+          "minNs": 3209,
+          "meanNs": 4061.88,
+          "p99Ns": 8683,
+          "rme": 2.798541978414885,
+          "samples": 500,
+          "iters": 100,
+          "bytesPerOp": 8143.510204081633,
+          "relative": 0.01712418300653595
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 362844.702467344,
+          "medianNs": 2756,
+          "minNs": 2542.6666666666665,
+          "meanNs": 3460.8826666666687,
+          "p99Ns": 19676,
+          "rme": 6.385169974858903,
+          "samples": 500,
+          "iters": 75,
+          "bytesPerOp": 3525.34435261708,
+          "relative": 0.021125624899209806
+        }
+      }
+    },
+    {
+      "id": "format-iso",
+      "name": "Format epoch ms to ISO-8601 UTC",
+      "group": "Formatting",
+      "note": "Serialising back out. Fixed 3 fractional digits for all contenders.",
+      "returns": "string",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 1239310.9431156279,
+          "medianNs": 806.9,
+          "minNs": 496.65,
+          "meanNs": 815.8585714285716,
+          "p99Ns": 1469.35,
+          "rme": 3.0641121776885196,
+          "samples": 245,
+          "iters": 2000,
+          "bytesPerOp": 153.3295683743445,
+          "relative": 0.07860511908320152
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 15766287.966612566,
+          "medianNs": 63.4264705882353,
+          "minNs": 60.970588235294116,
+          "meanNs": 69.02094117647054,
+          "p99Ns": 119.63235294117646,
+          "rme": 1.6910039752503307,
+          "samples": 500,
+          "iters": 6800,
+          "bytesPerOp": 56.82,
+          "relative": 1
+        },
+        "chrono-obj": {
+          "status": "ok",
+          "opsPerSec": 12256267.409470752,
+          "medianNs": 81.5909090909091,
+          "minNs": 62,
+          "meanNs": 86.17509090909101,
+          "p99Ns": 144.6818181818182,
+          "rme": 2.3637346109897313,
+          "samples": 500,
+          "iters": 2200,
+          "bytesPerOp": 88.86,
+          "relative": 0.7773717843683434
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 323415.2652005175,
+          "medianNs": 3092,
+          "minNs": 2679,
+          "meanNs": 3646.328,
+          "p99Ns": 7674,
+          "rme": 2.766798133959974,
+          "samples": 500,
+          "iters": 100,
+          "bytesPerOp": 8901.255023183925,
+          "relative": 0.020513088806026942
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 178964.7577092511,
+          "medianNs": 5587.692307692308,
+          "minNs": 5255.384615384615,
+          "meanNs": 6503.390769230775,
+          "p99Ns": 30704.615384615383,
+          "rme": 5.357248434303116,
+          "samples": 500,
+          "iters": 65,
+          "bytesPerOp": 5681.787709497206,
+          "relative": 0.011351102941176472
+        }
+      }
+    },
+    {
+      "id": "format-date-key",
+      "name": "Format epoch ms to YYYY-MM-DD (UTC)",
+      "group": "Formatting",
+      "note": "The grouping key for daily aggregation.",
+      "returns": "string",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 1907123.1047964145,
+          "medianNs": 524.35,
+          "minNs": 503.75,
+          "meanNs": 599.7357784431135,
+          "p99Ns": 1068,
+          "rme": 2.9523017430315126,
+          "samples": 334,
+          "iters": 2000,
+          "bytesPerOp": 184.93340325117987,
+          "relative": 0.0831929478825636
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 22924095.77177789,
+          "medianNs": 43.62222222222222,
+          "minNs": 40.55555555555556,
+          "meanNs": 47.18764444444448,
+          "p99Ns": 72.64444444444445,
+          "rme": 1.4398681353624423,
+          "samples": 500,
+          "iters": 9000,
+          "bytesPerOp": 32.692,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 184536.3232889512,
+          "medianNs": 5418.987341772152,
+          "minNs": 4948.101265822785,
+          "meanNs": 6857.630379746834,
+          "p99Ns": 23520.25316455696,
+          "rme": 4.771413097927274,
+          "samples": 500,
+          "iters": 79,
+          "bytesPerOp": 15525.745257452574,
+          "relative": 0.00804988450258247
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 169491.5254237288,
+          "medianNs": 5900,
+          "minNs": 4751.063829787234,
+          "meanNs": 7977.634042553194,
+          "p99Ns": 55902.12765957447,
+          "rme": 8.556873316690258,
+          "samples": 500,
+          "iters": 47,
+          "bytesPerOp": 5149.451327433629,
+          "relative": 0.0073935969868173254
+        }
+      }
+    },
+    {
+      "id": "add-days",
+      "name": "Add 7 days",
+      "group": "Arithmetic (from epoch ms)",
+      "note": "Input and output are epoch ms, so object libraries pay construction cost.",
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 10868010.86801087,
+          "medianNs": 92.01315789473684,
+          "minNs": 82.09210526315789,
+          "meanNs": 102.63639473684206,
+          "p99Ns": 187.9078947368421,
+          "rme": 1.9729371887720983,
+          "samples": 500,
+          "iters": 7600,
+          "bytesPerOp": 144.842,
+          "relative": 0.029604461604461608
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 367107195.3010279,
+          "medianNs": 2.724,
+          "minNs": 2.684,
+          "meanNs": 3.037480000000002,
+          "p99Ns": 12.036,
+          "rme": 3.867141583609236,
+          "samples": 500,
+          "iters": 50000,
+          "bytesPerOp": 16.82,
+          "relative": 1
+        },
+        "chrono-obj": {
+          "status": "ok",
+          "opsPerSec": 173880316.14602935,
+          "medianNs": 5.751082251082251,
+          "minNs": 5.404761904761905,
+          "meanNs": 7.39228571428571,
+          "p99Ns": 24.932900432900432,
+          "rme": 4.488585509442202,
+          "samples": 500,
+          "iters": 46200,
+          "bytesPerOp": 97.07,
+          "relative": 0.473649981181784
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 113833.68705382984,
+          "medianNs": 8784.745762711864,
+          "minNs": 7488.135593220339,
+          "meanNs": 11042.250847457623,
+          "p99Ns": 27410.169491525423,
+          "rme": 4.076050619633913,
+          "samples": 500,
+          "iters": 59,
+          "bytesPerOp": 23170.070175438595,
+          "relative": 0.0003100829635346325
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 121673.00380228137,
+          "medianNs": 8218.75,
+          "minNs": 7068.75,
+          "meanNs": 9976.375,
+          "p99Ns": 70912.5,
+          "rme": 7.983522594235041,
+          "samples": 500,
+          "iters": 32,
+          "bytesPerOp": 8452.905349794239,
+          "relative": 0.00033143726235741446
+        }
+      }
+    },
+    {
+      "id": "add-months",
+      "name": "Add 1 month, end-of-month clamped",
+      "group": "Arithmetic (from epoch ms)",
+      "note": "Jan 31 + 1 month is Feb 28/29. The naive Date setUTCMonth overflows, so the Date implementation does the clamping people forget to write.",
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 3955464.4008203926,
+          "medianNs": 252.8148148148148,
+          "minNs": 226,
+          "meanNs": 290.3820624546114,
+          "p99Ns": 478.8888888888889,
+          "rme": 3.103029975682232,
+          "samples": 255,
+          "iters": 5400,
+          "bytesPerOp": 240.9,
+          "relative": 0.1285816773237276
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 30762270.979416423,
+          "medianNs": 32.50735294117647,
+          "minNs": 31.352941176470587,
+          "meanNs": 33.8066029411765,
+          "p99Ns": 46.31617647058823,
+          "rme": 0.808992424962171,
+          "samples": 500,
+          "iters": 13600,
+          "bytesPerOp": 16.82,
+          "relative": 1
+        },
+        "chrono-obj": {
+          "status": "ok",
+          "opsPerSec": 27133166.726169225,
+          "medianNs": 36.85526315789474,
+          "minNs": 33.31578947368421,
+          "meanNs": 39.973881578947356,
+          "p99Ns": 60.73026315789474,
+          "rme": 1.4686105311468234,
+          "samples": 500,
+          "iters": 15200,
+          "bytesPerOp": 96.858,
+          "relative": 0.8820274271793687
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 119363.39522546419,
+          "medianNs": 8377.777777777777,
+          "minNs": 7392.063492063492,
+          "meanNs": 10461.97142857143,
+          "p99Ns": 26425.396825396827,
+          "rme": 3.803835235755541,
+          "samples": 500,
+          "iters": 63,
+          "bytesPerOp": 23438.42677824268,
+          "relative": 0.0038801880168513026
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 125173.85257301808,
+          "medianNs": 7988.888888888889,
+          "minNs": 7087.037037037037,
+          "meanNs": 9973.474074074074,
+          "p99Ns": 56125.92592592593,
+          "rme": 10.180814861044656,
+          "samples": 500,
+          "iters": 54,
+          "bytesPerOp": 8213.376,
+          "relative": 0.004069070604597889
+        }
+      }
+    },
+    {
+      "id": "start-of-day",
+      "name": "Truncate to start of UTC day",
+      "group": "Arithmetic (from epoch ms)",
+      "note": "Bucketing timestamps into days.",
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 8577555.396711938,
+          "medianNs": 116.58333333333333,
+          "minNs": 105.4,
+          "meanNs": 138.22928769017986,
+          "p99Ns": 210.58333333333334,
+          "rme": 2.9314162592052204,
+          "samples": 241,
+          "iters": 12000,
+          "bytesPerOp": 128.83,
+          "relative": 0.09488367980074133
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 90400745.57315937,
+          "medianNs": 11.061855670103093,
+          "minNs": 10.199312714776632,
+          "meanNs": 14.287333333333352,
+          "p99Ns": 59.59450171821306,
+          "rme": 5.942985552741573,
+          "samples": 500,
+          "iters": 29100,
+          "bytesPerOp": 16.82,
+          "relative": 1
+        },
+        "chrono-obj": {
+          "status": "ok",
+          "opsPerSec": 72434607.64587525,
+          "medianNs": 13.805555555555555,
+          "minNs": 9.583333333333334,
+          "meanNs": 18.14383333333333,
+          "p99Ns": 65.09722222222223,
+          "rme": 5.040368615600832,
+          "samples": 500,
+          "iters": 7200,
+          "bytesPerOp": 96.822,
+          "relative": 0.8012611752992179
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 130614.1154903758,
+          "medianNs": 7656.140350877193,
+          "minNs": 6671.929824561404,
+          "meanNs": 9532.431578947375,
+          "p99Ns": 26573.684210526317,
+          "rme": 4.243674065441139,
+          "samples": 500,
+          "iters": 57,
+          "bytesPerOp": 21833.072796934866,
+          "relative": 0.0014448344940327137
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 162303.66492146597,
+          "medianNs": 6161.290322580645,
+          "minNs": 5508.064516129032,
+          "meanNs": 7878.606451612908,
+          "p99Ns": 44924.1935483871,
+          "rme": 8.77900711363585,
+          "samples": 500,
+          "iters": 62,
+          "bytesPerOp": 5672.369230769231,
+          "relative": 0.0017953797160900307
+        }
+      }
+    },
+    {
+      "id": "diff-days",
+      "name": "Whole calendar days between two instants",
+      "group": "Arithmetic (from epoch ms)",
+      "note": null,
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 4414036.636504083,
+          "medianNs": 226.55,
+          "minNs": 215.81666666666666,
+          "meanNs": 242.7790303030303,
+          "p99Ns": 382.93333333333334,
+          "rme": 2.004537327206043,
+          "samples": 275,
+          "iters": 6000,
+          "bytesPerOp": 256.06,
+          "relative": 0.016406434063698086
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 269043024.1798161,
+          "medianNs": 3.7168776371308017,
+          "minNs": 3.6679324894514767,
+          "meanNs": 4.241286761206817,
+          "p99Ns": 7.0518987341772155,
+          "rme": 2.484491570193799,
+          "samples": 399,
+          "iters": 237000,
+          "bytesPerOp": 0.064,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 29251.984956122025,
+          "medianNs": 34185.71428571428,
+          "minNs": 31366.666666666668,
+          "meanNs": 38134.83156789772,
+          "p99Ns": 104900,
+          "rme": 2.959997064743071,
+          "samples": 499,
+          "iters": 21,
+          "relative": 0.00010872604872509658
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 70251.93798449612,
+          "medianNs": 14234.48275862069,
+          "minNs": 12510.344827586207,
+          "meanNs": 17905.965517241384,
+          "p99Ns": 114427.58620689655,
+          "rme": 8.186801720844665,
+          "samples": 500,
+          "iters": 29,
+          "bytesPerOp": 15164.32,
+          "relative": 0.0002611178572596735
+        }
+      }
+    },
+    {
+      "id": "add-days-obj",
+      "name": "Add 7 days to an existing instance",
+      "group": "Arithmetic (native object in)",
+      "note": "No construction from ms. Isolates the arithmetic itself. Date must be copied first because it is mutable; the immutable libraries do not.",
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 11605124.340617934,
+          "medianNs": 86.16883116883118,
+          "minNs": 77.23376623376623,
+          "meanNs": 90.96987012987006,
+          "p99Ns": 166.25974025974025,
+          "rme": 1.5880764773930862,
+          "samples": 500,
+          "iters": 7700,
+          "bytesPerOp": 128.834,
+          "relative": 0.03609193669932177
+        },
+        "chrono-obj": {
+          "status": "ok",
+          "opsPerSec": 321543408.36012864,
+          "medianNs": 3.11,
+          "minNs": 3.07,
+          "meanNs": 4.013813333333358,
+          "p99Ns": 27.066666666666666,
+          "rme": 8.134446580170703,
+          "samples": 500,
+          "iters": 30000,
+          "bytesPerOp": 16.064,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 240171.91252686133,
+          "medianNs": 4163.684210526316,
+          "minNs": 3442.1052631578946,
+          "meanNs": 4724.071276846827,
+          "p99Ns": 9588.947368421053,
+          "rme": 2.782193626077244,
+          "samples": 446,
+          "iters": 190,
+          "bytesPerOp": 9957.916666666666,
+          "relative": 0.0007469346479585387
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 133971.2918660287,
+          "medianNs": 7464.285714285715,
+          "minNs": 6440.476190476191,
+          "meanNs": 9718.12857142857,
+          "p99Ns": 40407.142857142855,
+          "rme": 5.852153776606182,
+          "samples": 500,
+          "iters": 42,
+          "bytesPerOp": 7290.059701492537,
+          "relative": 0.00041665071770334924
+        }
+      }
+    },
+    {
+      "id": "add-months-obj",
+      "name": "Add 1 month to an existing instance",
+      "group": "Arithmetic (native object in)",
+      "note": null,
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 4330943.847072879,
+          "medianNs": 230.89655172413794,
+          "minNs": 215.60344827586206,
+          "meanNs": 255.54220945083,
+          "p99Ns": 432.12068965517244,
+          "rme": 2.674259147686926,
+          "samples": 270,
+          "iters": 5800,
+          "bytesPerOp": 224.874,
+          "relative": 0.14186006571087215
+        },
+        "chrono-obj": {
+          "status": "ok",
+          "opsPerSec": 30529690.123645242,
+          "medianNs": 32.755,
+          "minNs": 31.725,
+          "meanNs": 33.64016999999998,
+          "p99Ns": 44.395,
+          "rme": 0.6160503484941041,
+          "samples": 500,
+          "iters": 20000,
+          "bytesPerOp": 16.82,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 247867.80383795308,
+          "medianNs": 4034.4086021505377,
+          "minNs": 3384.94623655914,
+          "meanNs": 4740.576344086023,
+          "p99Ns": 11592.47311827957,
+          "rme": 3.268788325901902,
+          "samples": 500,
+          "iters": 93,
+          "bytesPerOp": 9758.467741935483,
+          "relative": 0.008118909914712154
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 142758.4618927009,
+          "medianNs": 7004.8387096774195,
+          "minNs": 6438.709677419355,
+          "meanNs": 9047.964516129035,
+          "p99Ns": 33069.354838709674,
+          "rme": 5.4246246155144195,
+          "samples": 500,
+          "iters": 62,
+          "bytesPerOp": 7239.72027972028,
+          "relative": 0.004676053419295418
+        }
+      }
+    },
+    {
+      "id": "fields",
+      "name": "Read all six calendar fields",
+      "group": "Field access",
+      "note": "y/m/d/h/m/s combined into one number. chronoFast does one civil conversion for all six; Date recomputes per getter.",
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 8131283.264340627,
+          "medianNs": 122.98181818181818,
+          "minNs": 102.04545454545455,
+          "meanNs": 142.72417112299462,
+          "p99Ns": 236.24545454545455,
+          "rme": 3.2209432483142937,
+          "samples": 255,
+          "iters": 11000,
+          "bytesPerOp": 128.83,
+          "relative": 0.20370266522563676
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 39917412.25051617,
+          "medianNs": 25.051724137931036,
+          "minNs": 24.557471264367816,
+          "meanNs": 26.38444827586209,
+          "p99Ns": 38.160919540229884,
+          "rme": 1.0940399986149447,
+          "samples": 500,
+          "iters": 17400,
+          "bytesPerOp": 16.82,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 190169.68987712113,
+          "medianNs": 5258.461538461538,
+          "minNs": 4567.692307692308,
+          "meanNs": 6846.959999999996,
+          "p99Ns": 27166.153846153848,
+          "rme": 5.811143673914757,
+          "samples": 500,
+          "iters": 65,
+          "bytesPerOp": 14325.642105263158,
+          "relative": 0.004764078610197535
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 25375.93984962406,
+          "medianNs": 39407.40740740741,
+          "minNs": 21918.51851851852,
+          "meanNs": 40372.227268140065,
+          "p99Ns": 93729.62962962964,
+          "rme": 3.7204342777549524,
+          "samples": 367,
+          "iters": 27,
+          "relative": 0.0006357110448535132
+        }
+      }
+    },
+    {
+      "id": "day-of-week",
+      "name": "ISO day of week (1=Mon..7=Sun)",
+      "group": "Field access",
+      "note": null,
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 13568949.195329757,
+          "medianNs": 73.69767441860465,
+          "minNs": 43.58139534883721,
+          "meanNs": 74.0812558139535,
+          "p99Ns": 150.5581395348837,
+          "rme": 2.959681011191504,
+          "samples": 500,
+          "iters": 8600,
+          "bytesPerOp": 112.822,
+          "relative": 0.062437519722309875
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 217320438.98728678,
+          "medianNs": 4.6015,
+          "minNs": 4.396,
+          "meanNs": 5.245649214659683,
+          "p99Ns": 8.5375,
+          "rme": 2.2575238774233077,
+          "samples": 382,
+          "iters": 200000,
+          "bytesPerOp": 0.82,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 185501.066098081,
+          "medianNs": 5390.80459770115,
+          "minNs": 4310.3448275862065,
+          "meanNs": 7505.418390804591,
+          "p99Ns": 30732.183908045976,
+          "rme": 6.025482208509094,
+          "samples": 500,
+          "iters": 87,
+          "bytesPerOp": 13983.396226415094,
+          "relative": 0.0008535831556503197
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 212523.71916508538,
+          "medianNs": 4705.357142857143,
+          "minNs": 4060.714285714286,
+          "meanNs": 6413.46785714286,
+          "p99Ns": 41955.357142857145,
+          "rme": 8.145213900352388,
+          "samples": 500,
+          "iters": 56,
+          "bytesPerOp": 3848.64,
+          "relative": 0.0009779278937381403
+        }
+      }
+    },
+    {
+      "id": "iso-week",
+      "name": "ISO-8601 week number",
+      "group": "Field access",
+      "note": null,
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 4128294.6967291203,
+          "medianNs": 242.23076923076923,
+          "minNs": 223.15384615384616,
+          "meanNs": 260.6997692307694,
+          "p99Ns": 479.84615384615387,
+          "rme": 1.7855457157680443,
+          "samples": 500,
+          "iters": 2600,
+          "bytesPerOp": 352.892,
+          "relative": 0.1102113545746445
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 37457979.830318555,
+          "medianNs": 26.696581196581196,
+          "minNs": 25.863247863247864,
+          "meanNs": 28.44170940170942,
+          "p99Ns": 36.3974358974359,
+          "rme": 0.9043985171101973,
+          "samples": 500,
+          "iters": 23400,
+          "bytesPerOp": 0.82,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 156603.77358490566,
+          "medianNs": 6385.542168674699,
+          "minNs": 5018.0722891566265,
+          "meanNs": 8164.619277108436,
+          "p99Ns": 29238.55421686747,
+          "rme": 5.447961190402321,
+          "samples": 500,
+          "iters": 83,
+          "bytesPerOp": 14754.198083067093,
+          "relative": 0.004180785357200452
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 186500.88809946715,
+          "medianNs": 5361.9047619047615,
+          "minNs": 4728.571428571428,
+          "meanNs": 6798.860317460319,
+          "p99Ns": 38247.619047619046,
+          "rme": 7.445041640683099,
+          "samples": 500,
+          "iters": 63,
+          "bytesPerOp": 6073.286863270778,
+          "relative": 0.004978936102381928
+        }
+      }
+    },
+    {
+      "id": "sort",
+      "name": "Sort 2000 instants",
+      "group": "Bulk workloads",
+      "note": "One whole sort per operation, on a fresh copy each time.",
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 597.2645284596548,
+          "medianNs": 1674300,
+          "minNs": 1529200,
+          "meanNs": 1905247.142857143,
+          "p99Ns": 2731800,
+          "rme": 2.7666052707312905,
+          "samples": 210,
+          "iters": 1,
+          "relative": 0.14258695176093492
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 4188.774085450991,
+          "medianNs": 238733.33333333334,
+          "minNs": 221066.66666666666,
+          "meanNs": 250501.25313283206,
+          "p99Ns": 383883.3333333333,
+          "rme": 2.086604137014908,
+          "samples": 266,
+          "iters": 6,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 1892.863903085368,
+          "medianNs": 528300,
+          "minNs": 506066.6666666667,
+          "meanNs": 595010.714285714,
+          "p99Ns": 938100,
+          "rme": 2.7024722831441377,
+          "samples": 224,
+          "iters": 3,
+          "relative": 0.45188970912991355
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 31.73887790371059,
+          "medianNs": 31507100,
+          "minNs": 16917400,
+          "meanNs": 41995706.666666664,
+          "p99Ns": 108938200,
+          "rme": 29.761975368563892,
+          "samples": 15,
+          "iters": 1,
+          "relative": 0.007577128118212509
+        }
+      }
+    },
+    {
+      "id": "pipeline",
+      "name": "Pipeline: parse then +30 days then format",
+      "group": "Bulk workloads",
+      "note": "The classic \"compute a due date from an API payload\" round trip.",
+      "returns": "string",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 1340482.5737265416,
+          "medianNs": 746,
+          "minNs": 721.8571428571429,
+          "meanNs": 884.0950906678462,
+          "p99Ns": 1490.857142857143,
+          "rme": 2.969930037875186,
+          "samples": 323,
+          "iters": 1400,
+          "bytesPerOp": 153.23535994032076,
+          "relative": 0.13985701519213584
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 9041591.320072332,
+          "medianNs": 110.6,
+          "minNs": 99.8,
+          "meanNs": 131.3134,
+          "p99Ns": 263.8,
+          "rme": 2.477058345268513,
+          "samples": 500,
+          "iters": 1000,
+          "bytesPerOp": 72.826,
+          "relative": 0.94333936106088
+        },
+        "chrono-obj": {
+          "status": "ok",
+          "opsPerSec": 9584664.536741214,
+          "medianNs": 104.33333333333333,
+          "minNs": 100.44444444444444,
+          "meanNs": 117.48822222222212,
+          "p99Ns": 251.55555555555554,
+          "rme": 2.381674803614098,
+          "samples": 500,
+          "iters": 900,
+          "bytesPerOp": 137.314,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 68965.5172413793,
+          "medianNs": 14500,
+          "minNs": 11645.945945945947,
+          "meanNs": 17427.237837837816,
+          "p99Ns": 43305.40540540541,
+          "rme": 3.5045909933500132,
+          "samples": 500,
+          "iters": 37,
+          "bytesPerOp": 34501.72,
+          "relative": 0.0071954022988505745
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 68884.0779374139,
+          "medianNs": 14517.142857142857,
+          "minNs": 13074.285714285714,
+          "meanNs": 17937.897142857142,
+          "p99Ns": 81862.85714285714,
+          "rme": 6.504459963702488,
+          "samples": 500,
+          "iters": 35,
+          "bytesPerOp": 14779.52,
+          "relative": 0.007186905464803516
+        }
+      }
+    },
+    {
+      "id": "bulk-bucket",
+      "name": "Parse 10000 ISO strings and count per UTC day",
+      "group": "Bulk workloads",
+      "note": "One full pass per operation. The realistic log/event aggregation workload.",
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 144.98637128109957,
+          "medianNs": 6897200,
+          "minNs": 6677500,
+          "meanNs": 7366305.454545454,
+          "p99Ns": 12524400,
+          "rme": 4.432843647300658,
+          "samples": 55,
+          "iters": 1,
+          "relative": 0.05850200081192368
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 2478.3147459727384,
+          "medianNs": 403500,
+          "minNs": 394200,
+          "meanNs": 417824.0334378264,
+          "p99Ns": 598000,
+          "rme": 0.9681277997418988,
+          "samples": 319,
+          "iters": 3,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 11.366813904796114,
+          "medianNs": 87975400,
+          "minNs": 77486100,
+          "meanNs": 86850380,
+          "p99Ns": 96785100,
+          "rme": 4.001325857564991,
+          "samples": 15,
+          "iters": 1,
+          "relative": 0.004586509410585232
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 12.719555426098747,
+          "medianNs": 78619100,
+          "minNs": 68908500,
+          "meanNs": 80653093.33333333,
+          "p99Ns": 100324400,
+          "rme": 5.589346605697003,
+          "samples": 15,
+          "iters": 1,
+          "relative": 0.005132340614430845
+        }
+      }
+    },
+    {
+      "id": "zone-offset",
+      "name": "UTC offset for an instant",
+      "group": "Timezone (Europe/Bratislava)",
+      "note": "Scattered over two years, so chronoFast's interval cache gets no easy ride.",
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 369856.6805362922,
+          "medianNs": 2703.75,
+          "minNs": 2605.5,
+          "meanNs": 3003.9214071856286,
+          "p99Ns": 6377.75,
+          "rme": 2.597790291591355,
+          "samples": 334,
+          "iters": 400,
+          "bytesPerOp": 1053.8054054054055,
+          "relative": 0.008084010303150386
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 45751633.986928105,
+          "medianNs": 21.857142857142858,
+          "minNs": 13.428571428571429,
+          "meanNs": 25.13142857142857,
+          "p99Ns": 60,
+          "rme": 6.711429050800113,
+          "samples": 500,
+          "iters": 700,
+          "bytesPerOp": 2.98,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 151129.2239769061,
+          "medianNs": 6616.853932584269,
+          "minNs": 5828.08988764045,
+          "meanNs": 8009.948314606737,
+          "p99Ns": 21213.483146067414,
+          "rme": 4.029280013600271,
+          "samples": 500,
+          "iters": 89,
+          "bytesPerOp": 17178.172185430463,
+          "relative": 0.003303253038352376
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 242595.20451339916,
+          "medianNs": 4122.093023255814,
+          "minNs": 3725.5813953488373,
+          "meanNs": 4958.530232558139,
+          "p99Ns": 26004.6511627907,
+          "rme": 6.389851537279391,
+          "samples": 500,
+          "iters": 86,
+          "bytesPerOp": 3645.773195876289,
+          "relative": 0.005302438041507153
+        }
+      }
+    },
+    {
+      "id": "zone-format",
+      "name": "Format instant as local ISO with offset",
+      "group": "Timezone (Europe/Bratislava)",
+      "note": null,
+      "returns": "string",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 317091.21657330095,
+          "medianNs": 3153.6666666666665,
+          "minNs": 2894.3333333333335,
+          "meanNs": 3653.624657534251,
+          "p99Ns": 5572.333333333333,
+          "rme": 2.4907418941246857,
+          "samples": 365,
+          "iters": 300,
+          "bytesPerOp": 1769.135646687697,
+          "relative": 0.02938378606912589
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 10791366.90647482,
+          "medianNs": 92.66666666666667,
+          "minNs": 87,
+          "meanNs": 98.7236666666668,
+          "p99Ns": 195.83333333333334,
+          "rme": 1.7888500488036279,
+          "samples": 500,
+          "iters": 600,
+          "bytesPerOp": 67.734,
+          "relative": 1
+        },
+        "chrono-obj": {
+          "status": "ok",
+          "opsPerSec": 10791366.90647482,
+          "medianNs": 92.66666666666667,
+          "minNs": 89.16666666666667,
+          "meanNs": 97.60000000000005,
+          "p99Ns": 177,
+          "rme": 1.429462178153053,
+          "samples": 500,
+          "iters": 600,
+          "bytesPerOp": 107.762,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 119801.70751858992,
+          "medianNs": 8347.12643678161,
+          "minNs": 6601.149425287356,
+          "meanNs": 8937.441379310347,
+          "p99Ns": 15140.229885057472,
+          "rme": 2.203105939035354,
+          "samples": 500,
+          "iters": 87,
+          "bytesPerOp": 21014.533333333333,
+          "relative": 0.011101624896722666
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 98021.08378028483,
+          "medianNs": 10201.88679245283,
+          "minNs": 9239.622641509433,
+          "meanNs": 11973.758490566028,
+          "p99Ns": 30562.264150943396,
+          "rme": 2.9427078194305523,
+          "samples": 500,
+          "iters": 53,
+          "bytesPerOp": 9015.96,
+          "relative": 0.00908328709697306
+        }
+      }
+    },
+    {
+      "id": "zone-add-day",
+      "name": "Add 1 local day across DST",
+      "group": "Timezone (Europe/Bratislava)",
+      "note": "A calendar day, not 24 hours: 23h or 25h when it crosses a transition.",
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 114129.1942478886,
+          "medianNs": 8762,
+          "minNs": 8295.5,
+          "meanNs": 9578.485645933015,
+          "p99Ns": 15685.5,
+          "rme": 2.705249636966899,
+          "samples": 209,
+          "iters": 200,
+          "bytesPerOp": 3353.5789473684213,
+          "relative": 0.00720789266783332
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 15833919.774806473,
+          "medianNs": 63.15555555555556,
+          "minNs": 38.888888888888886,
+          "meanNs": 63.90142222222224,
+          "p99Ns": 112.64444444444445,
+          "rme": 2.2057452592009787,
+          "samples": 500,
+          "iters": 9000,
+          "bytesPerOp": 39.62,
+          "relative": 1
+        },
+        "chrono-obj": {
+          "status": "ok",
+          "opsPerSec": 13972602.73972603,
+          "medianNs": 71.56862745098039,
+          "minNs": 49.01960784313726,
+          "meanNs": 97.41568627450985,
+          "p99Ns": 392.6470588235294,
+          "rme": 6.673012200191142,
+          "samples": 500,
+          "iters": 204,
+          "bytesPerOp": 137.152,
+          "relative": 0.8824474885844751
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 89523.80952380953,
+          "medianNs": 11170.212765957447,
+          "minNs": 9765.95744680851,
+          "meanNs": 13267.012765957441,
+          "p99Ns": 33882.97872340425,
+          "rme": 3.4451626904627526,
+          "samples": 500,
+          "iters": 47,
+          "bytesPerOp": 27022.32,
+          "relative": 0.005653925925925927
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 54495.91280653951,
+          "medianNs": 18350,
+          "minNs": 16791.666666666668,
+          "meanNs": 23177.683333333334,
+          "p99Ns": 74683.33333333333,
+          "rme": 4.480583282997669,
+          "samples": 500,
+          "iters": 24,
+          "bytesPerOp": 17550.84,
+          "relative": 0.003441719648804118
+        }
+      }
+    },
+    {
+      "id": "zone-start-of-day",
+      "name": "Local midnight for an instant",
+      "group": "Timezone (Europe/Bratislava)",
+      "note": null,
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 105630.08344776592,
+          "medianNs": 9467,
+          "minNs": 8671,
+          "meanNs": 10839.414634146342,
+          "p99Ns": 20605,
+          "rme": 2.662451643266215,
+          "samples": 369,
+          "iters": 100,
+          "bytesPerOp": 3583.962085308057,
+          "relative": 0.006460306561975517
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 16350630.18053821,
+          "medianNs": 61.15972222222222,
+          "minNs": 54.076388888888886,
+          "meanNs": 64.36400462962968,
+          "p99Ns": 90.38888888888889,
+          "rme": 1.2586954042282508,
+          "samples": 432,
+          "iters": 14400,
+          "bytesPerOp": 40.012,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 88495.57522123893,
+          "medianNs": 11300,
+          "minNs": 8579.545454545454,
+          "meanNs": 14125.522727272728,
+          "p99Ns": 38556.818181818184,
+          "rme": 4.315003663515219,
+          "samples": 500,
+          "iters": 44,
+          "bytesPerOp": 24711.56,
+          "relative": 0.005412364798426745
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 61390.40982246557,
+          "medianNs": 16289.18918918919,
+          "minNs": 15302.702702702703,
+          "meanNs": 18778.34054054056,
+          "p99Ns": 44210.81081081081,
+          "rme": 2.7823126735939794,
+          "samples": 500,
+          "iters": 37,
+          "bytesPerOp": 14617.44,
+          "relative": 0.0037546204118503765
+        }
+      }
+    },
+    {
+      "id": "zone-bulk-bucket",
+      "name": "Bucket 10000 instants by LOCAL day",
+      "group": "Timezone (Europe/Bratislava)",
+      "note": "Clustered over ~45 days, which is what event aggregation really looks like. This is where an offset cache earns its keep.",
+      "returns": "number",
+      "entries": {
+        "date": {
+          "status": "ok",
+          "opsPerSec": 34.28955471584246,
+          "medianNs": 29163400,
+          "minNs": 28515200,
+          "meanNs": 29625660,
+          "p99Ns": 33946200,
+          "rme": 2.460947471533182,
+          "samples": 15,
+          "iters": 1,
+          "relative": 0.0038314291200614472
+        },
+        "chrono-raw": {
+          "status": "ok",
+          "opsPerSec": 8949.54692918671,
+          "medianNs": 111737.5,
+          "minNs": 110050,
+          "meanNs": 113850.51136363637,
+          "p99Ns": 143037.5,
+          "rme": 0.569401145425318,
+          "samples": 440,
+          "iters": 8,
+          "relative": 1
+        },
+        "temporal-polyfill": {
+          "status": "ok",
+          "opsPerSec": 10.946152591556357,
+          "medianNs": 91356300,
+          "minNs": 81299600,
+          "meanNs": 91496953.33333333,
+          "p99Ns": 105858000,
+          "rme": 3.559809476753337,
+          "samples": 15,
+          "iters": 1,
+          "relative": 0.0012230957251990284
+        },
+        "js-temporal": {
+          "status": "ok",
+          "opsPerSec": 11.174008362627859,
+          "medianNs": 89493400,
+          "minNs": 74077000,
+          "meanNs": 97146193.33333333,
+          "p99Ns": 146206300,
+          "rme": 10.688845322666532,
+          "samples": 15,
+          "iters": 1,
+          "relative": 0.0012485557594191304
+        }
+      }
+    }
+  ],
+  "config": {
+    "sampleMs": 400,
+    "warmupMs": 150,
+    "alloc": true
+  }
+}

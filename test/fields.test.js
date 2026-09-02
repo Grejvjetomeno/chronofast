@@ -7,10 +7,10 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getYear, getMonth, getDay, getHour, getMinute, getSecond, getMillisecond,
-  dayOfWeek, isoDayOfWeek, isoWeek, isoWeekYear, dayOfYear, daysInMonth, isLeapYear,
+  dayOfWeek, dayOfWeekSunday0, isoWeek, isoWeekYear, dayOfYear, daysInMonth, isLeapYear,
   unpack, readFields, parseISO, cY, cM, cD, cH, cMi, cS, cMs,
 } from '../lib/core.js';
-import { ChronoInstant } from '../lib/index.js';
+import { ChronoPlain } from '../lib/index.js';
 import { scattered, EDGE_INSTANTS } from './helpers.js';
 
 const at = (s) => parseISO(s);
@@ -26,7 +26,7 @@ describe('field getters agree with Date', () => {
       assert.equal(getMinute(ms), d.getUTCMinutes(), `minute at ${d.toISOString()}`);
       assert.equal(getSecond(ms), d.getUTCSeconds(), `second at ${d.toISOString()}`);
       assert.equal(getMillisecond(ms), d.getUTCMilliseconds(), `ms at ${d.toISOString()}`);
-      assert.equal(dayOfWeek(ms), d.getUTCDay(), `dow at ${d.toISOString()}`);
+      assert.equal(dayOfWeekSunday0(ms), d.getUTCDay(), `dow at ${d.toISOString()}`);
     }
   });
 
@@ -58,7 +58,7 @@ describe('no function returns -0', () => {
   test('dayOfWeek and getMillisecond normalise negative zero', () => {
     for (let i = 0; i < 20000; i++) {
       const ms = -i * 1000;                      // exact second boundaries, negative side
-      assert.ok(!Object.is(dayOfWeek(ms), -0), `dayOfWeek returned -0 at ${ms}`);
+      assert.ok(!Object.is(dayOfWeekSunday0(ms), -0), `dayOfWeekSunday0 returned -0 at ${ms}`);
       assert.ok(!Object.is(getMillisecond(ms), -0), `getMillisecond returned -0 at ${ms}`);
       assert.ok(!Object.is(getHour(ms), -0), `getHour returned -0 at ${ms}`);
       assert.ok(!Object.is(getMinute(ms), -0), `getMinute returned -0 at ${ms}`);
@@ -77,16 +77,22 @@ describe('day of week', () => {
   ];
   for (const [s, dowExpected, isoExpected] of known) {
     test(s, () => {
-      assert.equal(dayOfWeek(at(s)), dowExpected, 'dayOfWeek (0 = Sunday)');
-      assert.equal(isoDayOfWeek(at(s)), isoExpected, 'isoDayOfWeek (1 = Monday)');
+      assert.equal(dayOfWeekSunday0(at(s)), dowExpected, 'dayOfWeekSunday0 (0 = Sunday)');
+      assert.equal(dayOfWeek(at(s)), isoExpected, 'dayOfWeek (ISO, 1 = Monday)');
     });
   }
-  test('isoDayOfWeek is always 1..7 and consistent with dayOfWeek', () => {
+  test('dayOfWeek is ISO 1..7 and consistent with the Sunday-first variant', () => {
     for (const ms of scattered(5000, 42)) {
-      const i = isoDayOfWeek(ms);
+      const i = dayOfWeek(ms);
       assert.ok(i >= 1 && i <= 7, `out of range: ${i}`);
-      assert.equal(i, ((dayOfWeek(ms) + 6) % 7) + 1);
+      assert.equal(i, ((dayOfWeekSunday0(ms) + 6) % 7) + 1);
     }
+  });
+
+  test('the two names cannot be confused: they disagree on Sunday', () => {
+    const sunday = at('2024-03-17T00:00:00.000Z');
+    assert.equal(dayOfWeek(sunday), 7, 'ISO Sunday is 7');
+    assert.equal(dayOfWeekSunday0(sunday), 0, 'Date-style Sunday is 0');
   });
 });
 
@@ -199,8 +205,9 @@ describe('unpack and the live-binding scratch slots', () => {
   });
 });
 
-describe('ChronoInstant field accessors', () => {
-  const t = ChronoInstant.parse('2024-03-15T13:45:56.789Z');
+// Calendar fields live on ChronoPlain now: a moment has none, by design.
+describe('ChronoPlain field accessors', () => {
+  const t = ChronoPlain.parse('2024-03-15T13:45:56.789');
   test('individual getters', () => {
     assert.equal(t.year, 2024);
     assert.equal(t.month, 3);
@@ -223,8 +230,8 @@ describe('ChronoInstant field accessors', () => {
     });
   });
   test('getters are stable when instances are interleaved', () => {
-    const a = ChronoInstant.parse('2024-03-15T00:00:00.000Z');
-    const b = ChronoInstant.parse('1998-11-03T00:00:00.000Z');
+    const a = ChronoPlain.parse('2024-03-15T00:00:00.000');
+    const b = ChronoPlain.parse('1998-11-03T00:00:00.000');
     for (let i = 0; i < 500; i++) {
       assert.equal(a.year, 2024);
       assert.equal(b.year, 1998);

@@ -19,7 +19,7 @@
 import type { EpochMs, WallMs, OffsetMs, TimeZoneId } from './brand.js';
 import { unsafeEpochMs, unsafeWallMs, unsafeOffsetMs } from './brand.js';
 import { MS_SEC, MS_MIN, MS_HOUR, MS_DAY, daysFromCivil, civilFromDays, unpack, daysInMonth,
-         cY, cM, cD, cH, cMi, cS, cMs } from './core.js';
+         pad2, pad3, pad4, year6, cY, cM, cD, cH, cMi, cS, cMs } from './core.js';
 
 interface Run {
   readonly split: false;
@@ -196,6 +196,15 @@ const offsetZ = (zc: Zone, t: number): number =>
 
 // ---------------------------------------------------------------- public API
 
+/**
+ * UTC offset for `tz` at this instant, in **milliseconds** east of UTC.
+ *
+ * `7200000` for +02:00, `-18000000` for -05:00. Always a whole number of seconds, and
+ * fractional hours are normal: `+05:45` for Kathmandu.
+ *
+ * Cheap when the instant falls inside an interval already known to have a constant
+ * offset, which after any warm-up is nearly always. See {@link zoneStats}.
+ */
 export function offsetAt(tz: TimeZoneId | string, utcMs: EpochMs): OffsetMs {
   const zc = zone(tz);
   return unsafeOffsetMs(utcMs >= zc.hotLo && utcMs < zc.hotHi ? zc.hotOff : offsetSlow(zc, utcMs));
@@ -205,9 +214,23 @@ export function offsetAt(tz: TimeZoneId | string, utcMs: EpochMs): OffsetMs {
 export const offsetAtUncached = (tz: TimeZoneId | string, utcMs: EpochMs): OffsetMs =>
   unsafeOffsetMs(rawOffset(zone(tz), utcMs));
 
+/**
+ * How to resolve a local time that is ambiguous (it happens twice, at a fall-back) or
+ * nonexistent (it is skipped, at a spring-forward).
+ *
+ * - `compatible` - the default, and what Temporal does: the **earlier** of an ambiguous
+ *   pair, and shifted **forward** across a gap.
+ * - `earlier` / `later` - pick a side explicitly.
+ * - `reject` - throw {@link AmbiguousTimeError} rather than choose.
+ */
 export type Disambiguation = 'compatible' | 'earlier' | 'later' | 'reject';
 
+/** Thrown only under `'reject'` disambiguation, when a local time is ambiguous or does not exist. */
 export class AmbiguousTimeError extends RangeError {
+  /**
+   * @param wall The local wall-clock reading that could not be resolved, as milliseconds.
+   * @param tz The zone it was being resolved against.
+   */
   constructor(wall: number, tz: string) {
     super(`Local time ${new Date(wall).toISOString().slice(0, 19)} is ambiguous or does not exist in ${tz}`);
     this.name = 'AmbiguousTimeError';
@@ -256,11 +279,20 @@ export function zonedFields(tz: TimeZoneId | string, utcMs: EpochMs): void {
   unpack(utcMs + offsetAt(tz, utcMs));
 }
 
+/** Local calendar year in `tz`. */
 export const zonedYear = (tz: TimeZoneId | string, ms: EpochMs): number => { zonedFields(tz, ms); return cY; };
+/** Local month in `tz`, **1-12**. January is 1. */
 export const zonedMonth = (tz: TimeZoneId | string, ms: EpochMs): number => { zonedFields(tz, ms); return cM; };
+/** Local day of the month in `tz`, **1-31**. */
 export const zonedDay = (tz: TimeZoneId | string, ms: EpochMs): number => { zonedFields(tz, ms); return cD; };
+/** Local hour in `tz`, **0-23**. */
 export const zonedHour = (tz: TimeZoneId | string, ms: EpochMs): number => { zonedFields(tz, ms); return cH; };
 
+/**
+ * The local wall-clock reading, as a {@link WallMs} - a number that looks like an instant
+ * but is not one. Feed it to {@link utcFromWall} to get back a real instant; the branded
+ * type exists to stop you confusing the two.
+ */
 export const wallOf = (tz: TimeZoneId | string, utcMs: EpochMs): WallMs =>
   unsafeWallMs(utcMs + offsetAt(tz, utcMs));
 
@@ -275,6 +307,11 @@ export function startOfDayZoned(tz: TimeZoneId | string, utcMs: EpochMs): EpochM
 export const addDaysZoned = (tz: TimeZoneId | string, utcMs: EpochMs, n: number): EpochMs =>
   utcFromWall(tz, unsafeWallMs(utcMs + offsetAt(tz, utcMs) + n * MS_DAY));
 
+/**
+ * Add `n` calendar months in local time, keeping the wall-clock time and **clamping to the
+ * end of the target month**. The offset is re-resolved afterwards, so a result that crosses
+ * a DST boundary is correct.
+ */
 export function addMonthsZoned(tz: TimeZoneId | string, utcMs: EpochMs, n: number): EpochMs {
   const wall = utcMs + offsetAt(tz, utcMs);
   const days = Math.floor(wall / MS_DAY);
@@ -292,16 +329,6 @@ export function addMonthsZoned(tz: TimeZoneId | string, utcMs: EpochMs, n: numbe
 export const addHoursZoned = (_tz: TimeZoneId | string, utcMs: EpochMs, n: number): EpochMs =>
   unsafeEpochMs(utcMs + n * MS_HOUR);
 
-const D2: readonly string[] = /* @__PURE__ */ (() => {
-  const a = new Array<string>(100);
-  for (let i = 0; i < 100; i++) a[i] = (i < 10 ? '0' : '') + i;
-  return a;
-})();
-const D3: readonly string[] = /* @__PURE__ */ (() => {
-  const a = new Array<string>(1000);
-  for (let i = 0; i < 1000; i++) a[i] = i < 10 ? '00' + i : i < 100 ? '0' + i : '' + i;
-  return a;
-})();
 
 const offStrCache = new Map<number, string>();
 function offsetString(off: number): string {
@@ -309,20 +336,14 @@ function offsetString(off: number): string {
   if (hit !== undefined) return hit;
   const a = off < 0 ? -off : off;
   const mins = Math.floor(a / MS_MIN);
-  const s = (off < 0 ? '-' : '+') + D2[(mins / 60) | 0]! + ':' + D2[mins % 60]!;
+  const s = (off < 0 ? '-' : '+') + pad2((mins / 60) | 0) + ':' + pad2(mins % 60);
   offStrCache.set(off, s);
   return s;
 }
 
-function year4or6(y: number): string {
-  if (y >= 0 && y <= 9999) {
-    return y < 10 ? '000' + y : y < 100 ? '00' + y : y < 1000 ? '0' + y : '' + y;
-  }
-  const a = y < 0 ? -y : y;
-  const p = a < 10 ? '00000' : a < 100 ? '0000' : a < 1000 ? '000'
-          : a < 10000 ? '00' : a < 100000 ? '0' : '';
-  return (y < 0 ? '-' : '+') + p + a;
-}
+// Shared with core rather than reimplemented: the two had drifted, one using padStart and
+// one a chain of comparisons.
+const year4or6 = (y: number): string => (y >= 0 && y <= 9999 ? pad4(y) : year6(y));
 
 /**
  * Local ISO with offset, e.g. `2024-03-15T11:30:00.123+01:00`.
@@ -339,8 +360,8 @@ export function formatZoned(tz: TimeZoneId | string, utcMs: EpochMs): string {
   const y = cY;
   if (y < 0 || y > 9999) {                       // rare, keep the readable path
     unpack(wall);
-    return year4or6(cY) + '-' + D2[cM]! + '-' + D2[cD]! + 'T' +
-           D2[cH]! + ':' + D2[cMi]! + ':' + D2[cS]! + '.' + D3[cMs]! + offsetString(off);
+    return year4or6(cY) + '-' + pad2(cM) + '-' + pad2(cD) + 'T' +
+           pad2(cH) + ':' + pad2(cMi) + ':' + pad2(cS) + '.' + pad3(cMs) + offsetString(off);
   }
   const h = (rem / MS_HOUR) | 0;   rem -= h * MS_HOUR;
   const mi = (rem / MS_MIN) | 0;   rem -= mi * MS_MIN;
@@ -376,7 +397,7 @@ export function toZonedISODate(tz: TimeZoneId | string, utcMs: EpochMs): string 
     ? String.fromCharCode(
         48 + ((y / 1000) | 0), 48 + (((y / 100) | 0) % 10), 48 + (((y / 10) | 0) % 10), 48 + (y % 10),
         45, 48 + ((cM / 10) | 0), 48 + (cM % 10), 45, 48 + ((cD / 10) | 0), 48 + (cD % 10))
-    : year4or6(y) + '-' + D2[cM]! + '-' + D2[cD]!;
+    : year4or6(y) + '-' + pad2(cM) + '-' + pad2(cD);
   zDayIdx = wallDay;
   zDayTz = tz;
   zDayVal = s;
@@ -388,16 +409,34 @@ export function toZonedISODate(tz: TimeZoneId | string, utcMs: EpochMs): string 
 /** False on engines predating ECMA-402 `longOffset`; the slower fallback is in use. */
 export const hasFastOffsetPath = (): boolean => LONG_OFFSET_SUPPORTED;
 
+/** What one zone's cache has done so far. See {@link zoneStats}. */
 export interface ZoneStats {
+  /**
+   * How many times `Intl` has been consulted for this zone since the cache was last reset.
+   * Healthy is roughly two per distinct UTC day touched, plus about seventeen more for each
+   * day that contains a DST transition, which is binary-searched once and then remembered.
+   */
   readonly intlCalls: number;
+  /** How many distinct UTC days this zone has an entry for. */
   readonly daysCached: number;
 }
 
+/**
+ * Cache statistics for one zone, or `null` if it has never been used. Intended for tests
+ * and diagnostics: a healthy `intlCalls` is roughly two per distinct UTC day touched, not
+ * one per lookup.
+ */
 export const zoneStats = (tz: TimeZoneId | string): ZoneStats | null => {
   const zc = zones.get(tz);
   return zc ? { intlCalls: zc.intlCalls, daysCached: zc.days.size } : null;
 };
 
+/**
+ * Drop every cached zone, interval and formatter.
+ *
+ * Only useful for benchmarking a cold cache, or to release memory after touching a very
+ * large number of distinct days. Correctness never depends on calling it.
+ */
 export function resetZoneCaches(): void {
   zones.clear();
   lastId = null;

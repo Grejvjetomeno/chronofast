@@ -38,8 +38,8 @@ for (const [sub, def] of Object.entries(pkg.exports || {})) {
 
 // --- the public surface is what we say it is ---
 const api = await import('../lib/index.js');
-const EXPECTED = ['AmbiguousTimeError', 'ChronoInstant', 'ChronoZoned',
-                  'InvalidInstantError', 'UnknownTimeZoneError'];
+const EXPECTED = ['AmbiguousTimeError', 'ChronoInstant', 'ChronoPlain', 'ChronoZoned',
+                  'InvalidInstantError', 'Now', 'UnknownTimeZoneError'];
 const actual = Object.keys(api).sort();
 check(JSON.stringify(actual) === JSON.stringify(EXPECTED),
       `public exports are exactly [${EXPECTED.join(', ')}]` +
@@ -52,13 +52,32 @@ for (const leaked of ['parseISO', 'toISO', 'addDays', 'offsetAt', 'civilFromDays
 const { ChronoInstant } = api;
 const t = ChronoInstant.parse('2024-03-15T10:30:00.000Z');
 check(t.toISOString() === '2024-03-15T10:30:00.000Z', 'round trip');
-check(ChronoInstant.parse('2024-01-31T00:00:00.000Z').addMonths(1).toISODate() === '2024-02-29',
+// Calendar arithmetic lives on ChronoPlain and ChronoZoned; a moment has no calendar.
+check(api.ChronoPlain.parse('2024-01-31T00:00:00').addMonths(1).toISODate() === '2024-02-29',
       'end-of-month clamp is leap-aware');
 const z = t.inZone('Europe/Bratislava');
 check(z.toISOString() === '2024-03-15T11:30:00.000+01:00', 'zoned formatting');
 const dst = ChronoInstant.fromEpochMs(Date.parse('2024-03-30T12:00:00Z')).inZone('Europe/Bratislava');
 check((dst.addDays(1).epochMilliseconds - dst.epochMilliseconds) / 3600000 === 23,
       'a calendar day across spring-forward is 23 hours');
+
+// Now must read the LOCAL clock, not UTC - the whole reason the namespace exists.
+const { Now, ChronoPlain } = api;
+
+// The split is the point: neither type may carry the other's capabilities.
+const probeInstant = ChronoInstant.parse('2024-03-15T10:30:00.000Z');
+const probePlain = ChronoPlain.parse('2024-03-15T10:30');
+for (const f of ['year', 'month', 'hour', 'dayOfWeek', 'addMonths', 'startOfDay']) {
+  check(!(f in probeInstant), `ChronoInstant has no ${f}`);
+}
+for (const f of ['epochMilliseconds', 'toDate', 'inZone', 'toISOString']) {
+  check(!(f in probePlain), `ChronoPlain has no ${f}`);
+}
+const wall = new Date().toLocaleString('sv-SE', { timeZone: Now.timeZoneId() }).replace(' ', 'T');
+check(Now.plainDateTimeISO().toPlainISOString().slice(0, 16) === wall.slice(0, 16),
+      'Now.plainDateTimeISO() reads the local wall clock');
+check(Now.plainDateISO().toISODate() === wall.slice(0, 10), 'Now.plainDateISO() is the local date');
+check(!Now.plainDateTimeISO().toPlainISOString().includes('Z'), 'toPlainISOString() emits no Z');
 
 // --- no runtime dependencies ---
 check(Object.keys(pkg.dependencies || {}).length === 0, 'zero runtime dependencies');

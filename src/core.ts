@@ -25,31 +25,64 @@
 import type { EpochMs, WallMs, DurationMs, DayIndex } from './brand.js';
 import { unsafeEpochMs, unsafeDayIndex } from './brand.js';
 
+/** Milliseconds in a second. */
 export const MS_SEC = 1000;
+/** Milliseconds in a minute. */
 export const MS_MIN = 60_000;
+/** Milliseconds in an hour. */
 export const MS_HOUR = 3_600_000;
+/** Milliseconds in a 24-hour day. A *calendar* day in a zone may be 23 or 25 hours. */
 export const MS_DAY = 86_400_000;
 
 // ---------------------------------------------------------------- scratch slots
+/**
+ * Scratch slots written by {@link unpack} and {@link civilFromDays}, read immediately by
+ * the caller. Module-scoped rather than returned in an object so that multi-value results
+ * cost no allocation.
+ *
+ * **Numbering is human, not `Date`-style:**
+ * `cM` is 1–12 (January is 1, not 0), `cD` is 1–31, `cH` is 0–23, `cMi` and `cS` are 0–59,
+ * `cMs` is 0–999.
+ *
+ * These are ES module *live bindings*. Read them directly; copying them into an object
+ * with spread snapshots the values and they will never update.
+ */
 export let cY = 0, cM = 0, cD = 0, cH = 0, cMi = 0, cS = 0, cMs = 0;
 
-/** Snapshot of the scratch slots, for callers that want a value instead of speed. */
+/**
+ * A snapshot of the calendar fields, in the numbering this library uses throughout:
+ * month **1-12**, day **1-31**, hour **0-23**, minute and second **0-59**,
+ * millisecond **0-999**.
+ */
 export interface DateTimeFields {
+  /** Calendar year. Negative before 1 CE. */
   readonly year: number;
-  readonly month: number;        // 1-12
-  readonly day: number;          // 1-31
-  readonly hour: number;         // 0-23
-  readonly minute: number;       // 0-59
-  readonly second: number;       // 0-59
-  readonly millisecond: number;  // 0-999
+  /** Month, **1-12**. January is 1, not 0. */
+  readonly month: number;
+  /** Day of the month, **1-31**. */
+  readonly day: number;
+  /** Hour, **0-23**. */
+  readonly hour: number;
+  /** Minute, **0-59**. */
+  readonly minute: number;
+  /** Second, **0-59**. There are no leap seconds. */
+  readonly second: number;
+  /** Millisecond, **0-999**. The finest precision this library carries. */
+  readonly millisecond: number;
 }
 
+/** Copy the current scratch slots into an object. Allocates; the slots themselves do not. */
 export const readFields = (): DateTimeFields => ({
   year: cY, month: cM, day: cD, hour: cH, minute: cMi, second: cS, millisecond: cMs,
 });
 
 // ---------------------------------------------------------------- civil <-> days
 
+/**
+ * Days since 1970-01-01 for a proleptic-Gregorian date.
+ * @param m Month, **1-12**.
+ * @param d Day of month, **1-31**. Not validated.
+ */
 export function daysFromCivil(y: number, m: number, d: number): number {
   const ya = m <= 2 ? y - 1 : y;
   const era = Math.floor(ya / 400);
@@ -73,6 +106,7 @@ function daysFromCivilMemo(y: number, m: number, d: number): number {
   return days;
 }
 
+/** Inverse of {@link daysFromCivil}. Writes {@link cY}, {@link cM}, {@link cD}; returns nothing. */
 export function civilFromDays(z: number): void {
   const zz = z + 719468;
   const era = Math.floor(zz / 146097);
@@ -87,9 +121,11 @@ export function civilFromDays(z: number): void {
   cD = d;
 }
 
+/** Whole days since 1970-01-01. A cheap integer key for bucketing by UTC day. */
 export const dayIndexOf = (ms: EpochMs | WallMs | number): DayIndex =>
   unsafeDayIndex(Math.floor(ms / MS_DAY));
 
+/** Split an instant into all seven scratch slots at once. Zero allocation; returns nothing. */
 export function unpack(ms: EpochMs | WallMs | number): void {
   const days = Math.floor(ms / MS_DAY);
   let rem = ms - days * MS_DAY;
@@ -100,14 +136,23 @@ export function unpack(ms: EpochMs | WallMs | number): void {
   cMs = rem - cS * MS_SEC;
 }
 
+/**
+ * Build an instant from UTC calendar fields. Not validated and does not clamp.
+ * @param m Month, **1-12**.
+ */
 export const pack = (y: number, m: number, d: number, h = 0, mi = 0, s = 0, msec = 0): EpochMs =>
   unsafeEpochMs(daysFromCivil(y, m, d) * MS_DAY + h * MS_HOUR + mi * MS_MIN + s * MS_SEC + msec);
 
+/**
+ * Length of a month in days, leap-aware.
+ * @param m Month, **1-12**.
+ */
 export function daysInMonth(y: number, m: number): number {
   if (m === 2) return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0 ? 29 : 28;
   return m === 4 || m === 6 || m === 9 || m === 11 ? 30 : 31;
 }
 
+/** Proleptic-Gregorian leap year: divisible by 4, except centuries not divisible by 400. */
 export const isLeapYear = (y: number): boolean =>
   (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
 
@@ -283,21 +328,47 @@ function parseISOGeneral(s: string, n: number): EpochMs {
   return unsafeEpochMs(z === 45 ? base + off : base - off);
 }
 
+/**
+ * Did this string carry a zone designator - a trailing `Z` or a `±HH:mm` offset?
+ *
+ * The distinction decides meaning, not just formatting: `2000-09-01T10:00Z` names an exact
+ * instant, whereas `2000-09-01T10:00` names a wall-clock reading that is only an instant
+ * once you say which zone it was read in. Scanning starts after the date so the hyphens in
+ * `YYYY-MM-DD`, and the sign of an expanded year, are never mistaken for an offset.
+ */
+export function hasZoneDesignator(s: string): boolean {
+  let sep = -1;
+  for (let k = 8; k < s.length; k++) {
+    const c = s.charCodeAt(k);
+    if (c === 84 || c === 116 || c === 32) { sep = k; break; }   // 'T' | 't' | ' '
+  }
+  if (sep < 0) return false;                                     // date-only: a local date
+  for (let k = sep + 1; k < s.length; k++) {
+    const c = s.charCodeAt(k);
+    if (c === 90 || c === 122 || c === 43 || c === 45) return true;   // 'Z' | 'z' | '+' | '-'
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------- ISO formatting
 
-const D2: readonly string[] = /* @__PURE__ */ (() => {
-  const a = new Array<string>(100);
-  for (let i = 0; i < 100; i++) a[i] = (i < 10 ? '0' : '') + i;
-  return a;
-})();
+// Two-digit and three-digit padding.
+//
+// These used to be 100- and 1000-entry lookup tables built at module load. Since the
+// emitters were rewritten to produce their whole result with one String.fromCharCode call,
+// nothing on a hot path reads them any more - only the rare expanded-year fallbacks do.
+// Building 1,100 strings at import for a path that almost never runs was pure startup
+// cost, so they are plain functions now.
+/** Zero-pad to two digits. */
+export const pad2 = (n: number): string => (n < 10 ? '0' + n : '' + n);
+/** Zero-pad to three digits. */
+export const pad3 = (n: number): string => (n < 10 ? '00' + n : n < 100 ? '0' + n : '' + n);
+/** Zero-pad to four digits. */
+export const pad4 = (n: number): string =>
+  n < 10 ? '000' + n : n < 100 ? '00' + n : n < 1000 ? '0' + n : '' + n;
 
-const D3: readonly string[] = /* @__PURE__ */ (() => {
-  const a = new Array<string>(1000);
-  for (let i = 0; i < 1000; i++) a[i] = i < 10 ? '00' + i : i < 100 ? '0' + i : '' + i;
-  return a;
-})();
-
-function year6(y: number): string {
+/** Expanded-year form for years outside 0000-9999, e.g. `+010000` or `-000001`. */
+export function year6(y: number): string {
   const a = y < 0 ? -y : y;
   const p = a < 10 ? '00000' : a < 100 ? '0000' : a < 1000 ? '000'
           : a < 10000 ? '00' : a < 100000 ? '0' : '';
@@ -316,7 +387,7 @@ function dayString(dayIdx: number): string {
     ? String.fromCharCode(
         48 + ((y / 1000) | 0), 48 + (((y / 100) | 0) % 10), 48 + (((y / 10) | 0) % 10), 48 + (y % 10),
         45, 48 + ((cM / 10) | 0), 48 + (cM % 10), 45, 48 + ((cD / 10) | 0), 48 + (cD % 10))
-    : year6(y) + '-' + D2[cM]! + '-' + D2[cD]!;
+    : year6(y) + '-' + pad2(cM) + '-' + pad2(cD);
   dayStrIdx = dayIdx;
   dayStrVal = s;
   return s;
@@ -333,8 +404,8 @@ function isoExtendedYear(rem: number): string {
   const h = (rem / MS_HOUR) | 0;  rem -= h * MS_HOUR;
   const mi = (rem / MS_MIN) | 0;  rem -= mi * MS_MIN;
   const s = (rem / MS_SEC) | 0;
-  return ys + '-' + D2[cM]! + '-' + D2[cD]! + 'T' +
-         D2[h]! + ':' + D2[mi]! + ':' + D2[s]! + '.' + D3[rem - s * MS_SEC]! + 'Z';
+  return ys + '-' + pad2(cM) + '-' + pad2(cD) + 'T' +
+         pad2(h) + ':' + pad2(mi) + ':' + pad2(s) + '.' + pad3(rem - s * MS_SEC) + 'Z';
 }
 
 /** Byte-for-byte equal to `Date.prototype.toISOString()`. */
@@ -367,23 +438,30 @@ export const toISODate = (ms: EpochMs): string => dayString(Math.floor(ms / MS_D
 
 // ---------------------------------------------------------------- field access
 
+/** Calendar year in UTC. Negative for years before 1 CE. */
 export const getYear = (ms: EpochMs): number => { civilFromDays(Math.floor(ms / MS_DAY)); return cY; };
+/** Calendar month in UTC, **1–12** — January is 1, not 0. */
 export const getMonth = (ms: EpochMs): number => { civilFromDays(Math.floor(ms / MS_DAY)); return cM; };
+/** Day of the month in UTC, **1–31**. */
 export const getDay = (ms: EpochMs): number => { civilFromDays(Math.floor(ms / MS_DAY)); return cD; };
 
 // [3] modulo, rather than floor-multiply-subtract
+/** Hour in UTC, **0-23**. */
 export function getHour(ms: EpochMs): number {
   const r = ms % MS_DAY;
   return (((r < 0 ? r + MS_DAY : r) / MS_HOUR) | 0);
 }
+/** Minute in UTC, **0-59**. */
 export function getMinute(ms: EpochMs): number {
   const r = ms % MS_HOUR;
   return (((r < 0 ? r + MS_HOUR : r) / MS_MIN) | 0);
 }
+/** Second in UTC, **0-59**. No leap seconds. */
 export function getSecond(ms: EpochMs): number {
   const r = ms % MS_MIN;
   return (((r < 0 ? r + MS_MIN : r) / MS_SEC) | 0);
 }
+/** Millisecond in UTC, **0-999**. */
 export function getMillisecond(ms: EpochMs): number {
   const r = ms % MS_SEC;
   // `| 0` also normalises -0 to 0: a negative instant landing exactly on a second boundary
@@ -391,16 +469,32 @@ export function getMillisecond(ms: EpochMs): number {
   return (r < 0 ? r + MS_SEC : r) | 0;
 }
 
-/** 0 = Sunday, matching `Date.prototype.getUTCDay()`. */
+/**
+ * ISO day of week: **1 = Monday … 7 = Sunday**.
+ *
+ * This is the ISO-8601 convention, and the same numbering `ChronoInstant#dayOfWeek` and
+ * `Temporal.PlainDate#dayOfWeek` use. If you want `Date`'s 0-based, Sunday-first numbering,
+ * call {@link dayOfWeekSunday0} — it is named explicitly because a function called
+ * `dayOfWeek` returning two different conventions in two places is how bugs happen.
+ *
+ * @returns 1–7, Monday through Sunday.
+ */
 export function dayOfWeek(ms: EpochMs): number {
-  const w = (Math.floor(ms / MS_DAY) + 4) % 7;
-  return (w < 0 ? w + 7 : w) | 0;      // `| 0` normalises -0 to 0
-}
-
-/** 1 = Monday .. 7 = Sunday, matching `Temporal.PlainDate#dayOfWeek`. */
-export function isoDayOfWeek(ms: EpochMs): number {
   const w = (Math.floor(ms / MS_DAY) + 3) % 7;
   return (w < 0 ? w + 7 : w) + 1;
+}
+
+/**
+ * `Date`-compatible day of week: **0 = Sunday … 6 = Saturday**.
+ *
+ * Identical to `Date.prototype.getUTCDay()`. Use this only when you are interoperating
+ * with code that already expects that numbering; {@link dayOfWeek} is the ISO one.
+ *
+ * @returns 0–6, Sunday through Saturday.
+ */
+export function dayOfWeekSunday0(ms: EpochMs): number {
+  const w = (Math.floor(ms / MS_DAY) + 4) % 7;
+  return (w < 0 ? w + 7 : w) | 0;      // `| 0` normalises -0 to 0
 }
 
 // [9] The week number needs the day index of Jan 1 of the ISO week-year. That was a second
@@ -419,6 +513,7 @@ function jan1Of(y: number): number {
   return d;
 }
 
+/** ISO-8601 week number, **1-53**. Week 1 holds the first Thursday. See {@link isoWeekYear}. */
 export function isoWeek(ms: EpochMs): number {
   const days = Math.floor(ms / MS_DAY);
   const dowMon = (((days + 3) % 7) + 7) % 7;
@@ -427,6 +522,7 @@ export function isoWeek(ms: EpochMs): number {
   return (((thursday - jan1Of(cY)) / 7) | 0) + 1;
 }
 
+/** ISO week-numbering year, which can differ from the calendar year at a year boundary. */
 export function isoWeekYear(ms: EpochMs): number {
   const days = Math.floor(ms / MS_DAY);
   const dowMon = (((days + 3) % 7) + 7) % 7;
@@ -434,6 +530,7 @@ export function isoWeekYear(ms: EpochMs): number {
   return cY;
 }
 
+/** Day of the year, **1-366**. 1 January is 1. */
 export function dayOfYear(ms: EpochMs): number {
   const days = Math.floor(ms / MS_DAY);
   civilFromDays(days);
@@ -442,11 +539,17 @@ export function dayOfYear(ms: EpochMs): number {
 
 // ---------------------------------------------------------------- arithmetic (UTC)
 
+/** Exact-time addition. Every `add*` helper here accepts a negative `n`. */
 export const addMilliseconds = (ms: EpochMs, n: DurationMs | number): EpochMs => unsafeEpochMs(ms + n);
+/** Add `n` seconds of elapsed time. */
 export const addSeconds = (ms: EpochMs, n: number): EpochMs => unsafeEpochMs(ms + n * MS_SEC);
+/** Add `n` minutes of elapsed time. */
 export const addMinutes = (ms: EpochMs, n: number): EpochMs => unsafeEpochMs(ms + n * MS_MIN);
+/** Add `n` hours of elapsed time. */
 export const addHours = (ms: EpochMs, n: number): EpochMs => unsafeEpochMs(ms + n * MS_HOUR);
+/** Add `n` days of exactly 24 hours. On the UTC timeline that is also a calendar day. */
 export const addDays = (ms: EpochMs, n: number): EpochMs => unsafeEpochMs(ms + n * MS_DAY);
+/** Add `n * 7` days. */
 export const addWeeks = (ms: EpochMs, n: number): EpochMs => unsafeEpochMs(ms + n * 7 * MS_DAY);
 
 /** Calendar month arithmetic, clamping to end of month (Jan 31 + 1mo -> Feb 28/29). */
@@ -454,6 +557,14 @@ export const addWeeks = (ms: EpochMs, n: number): EpochMs => unsafeEpochMs(ms + 
 // leap check for February is cheaper.
 const MONTH_LEN: readonly number[] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
+/**
+ * Calendar month arithmetic, **clamping to the end of the target month** so the result
+ * never lands in the following one.
+ *
+ * @example
+ * addMonths(parseISO('2024-01-31T00:00:00Z'), 1)   // 2024-02-29
+ * addMonths(parseISO('2023-01-31T00:00:00Z'), 1)   // 2023-02-28
+ */
 export function addMonths(ms: EpochMs, n: number): EpochMs {
   const days = Math.floor(ms / MS_DAY);
   const tod = ms - days * MS_DAY;
@@ -467,30 +578,40 @@ export function addMonths(ms: EpochMs, n: number): EpochMs {
   return unsafeEpochMs(daysFromCivil(y, m0 + 1, d) * MS_DAY + tod);
 }
 
+/** Add `n * 12` months, clamping. 29 February plus one year is 28 February. */
 export const addYears = (ms: EpochMs, n: number): EpochMs => addMonths(ms, n * 12);
 
 // ---------------------------------------------------------------- truncation (UTC)
 
+/** Midnight **UTC**. For local midnight see `startOfDayZoned` in `chronofast/zone`. */
 export function startOfDay(ms: EpochMs): EpochMs {
   const r = ms % MS_DAY;
   return unsafeEpochMs(r < 0 ? ms - r - MS_DAY : ms - r);
 }
+/** Top of this UTC hour. */
 export function startOfHour(ms: EpochMs): EpochMs {
   const r = ms % MS_HOUR;
   return unsafeEpochMs(r < 0 ? ms - r - MS_HOUR : ms - r);
 }
+/** Start of this UTC minute. */
 export function startOfMinute(ms: EpochMs): EpochMs {
   const r = ms % MS_MIN;
   return unsafeEpochMs(r < 0 ? ms - r - MS_MIN : ms - r);
 }
+/** Midnight UTC on the first day of this month. */
 export function startOfMonth(ms: EpochMs): EpochMs {
   civilFromDays(Math.floor(ms / MS_DAY));
   return unsafeEpochMs(daysFromCivil(cY, cM, 1) * MS_DAY);
 }
+/** Midnight UTC on 1 January of this year. */
 export function startOfYear(ms: EpochMs): EpochMs {
   civilFromDays(Math.floor(ms / MS_DAY));
   return unsafeEpochMs(daysFromCivil(cY, 1, 1) * MS_DAY);
 }
+/**
+ * Midnight UTC on the first day of this week.
+ * @param firstDay `0` = Sunday ... `6` = Saturday. Defaults to `1`, Monday (ISO).
+ */
 export function startOfWeek(ms: EpochMs, firstDay = 1): EpochMs {
   const days = Math.floor(ms / MS_DAY);
   const dow = (((days + 4) % 7) + 7) % 7;
@@ -500,7 +621,9 @@ export function startOfWeek(ms: EpochMs, firstDay = 1): EpochMs {
 
 // ---------------------------------------------------------------- differences
 
+/** Elapsed milliseconds from `a` to `b`. Negative if `b` is earlier. */
 export const diffMilliseconds = (a: EpochMs, b: EpochMs): number => b - a;
+/** Whole **calendar** days from `a` to `b`, not 24-hour spans: 23:59 to 00:01 is 1. */
 export const diffDays = (a: EpochMs, b: EpochMs): number =>
   Math.floor(b / MS_DAY) - Math.floor(a / MS_DAY);
 
@@ -514,14 +637,20 @@ export function diffMonths(a: EpochMs, b: EpochMs): number {
   return d;
 }
 
+/** Whole calendar years from `a` to `b`, truncated toward zero. */
 export const diffYears = (a: EpochMs, b: EpochMs): number => (diffMonths(a, b) / 12) | 0;
 
 // ---------------------------------------------------------------- comparison
 
+/** Comparator for `Array#sort`, earliest first. */
 export const compare = (a: EpochMs, b: EpochMs): -1 | 0 | 1 => (a < b ? -1 : a > b ? 1 : 0);
+/** `a` is strictly earlier than `b`. */
 export const isBefore = (a: EpochMs, b: EpochMs): boolean => a < b;
+/** `a` is strictly later than `b`. */
 export const isAfter = (a: EpochMs, b: EpochMs): boolean => a > b;
+/** The earlier of two instants. */
 export const min = (a: EpochMs, b: EpochMs): EpochMs => (a < b ? a : b);
+/** The later of two instants. */
 export const max = (a: EpochMs, b: EpochMs): EpochMs => (a > b ? a : b);
 
 /** Reset the internal memos. Only useful for benchmarking a cold cache. */

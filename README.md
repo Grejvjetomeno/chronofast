@@ -12,15 +12,23 @@ import { ChronoInstant } from 'chronofast';
 
 const t = ChronoInstant.parse('2024-03-15T10:30:00.000Z');
 
-t.year                                   // 2024  (UTC)
 t.addDays(7).toISOString()               // '2024-03-22T10:30:00.000Z'
-t.addMonths(1).toISODate()               // '2024-04-15'
+t.epochMilliseconds                      // 1710498600000
+
+// A moment has no calendar fields - ask which clock you mean first.
+t.toUtcPlain().year                      // 2024  (UTC)
 
 const z = t.inZone('Europe/Bratislava');
 z.hour                                   // 11  (local)
 z.toISOString()                          // '2024-03-15T11:30:00.000+01:00'
 z.addDays(1).toISOString()               // a calendar day, not 24 hours
 ```
+
+> **Coming from `Temporal`?** Read
+> [MIGRATING-FROM-TEMPORAL.md](./MIGRATING-FROM-TEMPORAL.md) first. `ChronoPlain` covers
+> `PlainDateTime` and `PlainDate`; there is no `PlainTime` and no `Duration`, and several of
+> the differences are silent rather than loud — a mechanical replace produces code that
+> compiles and is wrong.
 
 ## Why another date library
 
@@ -39,56 +47,124 @@ That is the whole trick. It is a technique, not magic, and the benchmark says so
 
 ## Performance
 
-Node 24 (V8 13.6), operations per second, higher is better. **Every measurement runs in its
-own process** — see [below](#on-trusting-benchmark-numbers) for why that turned out to be
-non-negotiable. Full tables in [`REPORT.md`](./REPORT.md); reproduce with `npm run bench`.
+**Nanoseconds per operation, lower is better.** Median of three runs, and **every measurement
+runs in its own process** — see [below](#on-trusting-benchmark-numbers) for why that turned out
+to be non-negotiable. The chronofast column is the public class API, not the raw layer.
 
-| Operation | `Date` | **chronofast** | temporal-polyfill | vs `Date` |
-|---|--:|--:|--:|--:|
-| Parse ISO-8601 UTC | 7.00M | **27.07M** | 354.9k | 4× |
-| Parse ISO-8601 with offset | 6.81M | **15.67M** | 294.1k | 2× |
-| Format to ISO-8601 | 1.24M | **15.77M** | 323.4k | 13× |
-| Format `YYYY-MM-DD` | 1.91M | **22.92M** | 184.5k | 12× |
-| Add 7 days | 10.87M | **367.11M** | 113.8k | 34× |
-| Add 1 month, clamped | 3.96M | **30.76M** | 119.4k | 8× |
-| Calendar days between two instants | 4.41M | **269.04M** | 29.3k | 61× |
-| Read all six calendar fields | 8.13M | **39.92M** | 190.2k | 5× |
-| Parse → +30 days → format | 1.34M | **9.04M** | 69.0k | 7× |
+Nothing is timed until it has been proved correct: every contender is compared against a
+reference on 200 spread indices first, and any that disagrees is reported and excluded. A fast
+wrong answer is not a result. Day.js is excluded from one row for exactly this reason.
+
+Full tables in [`REPORT.md`](./REPORT.md); reproduce with `npm run bench:all`.
+
+### Node 24.13 (V8 13.6)
+
+| Operation | `Date` | **chronofast** | Day.js | Temporal native | temporal-polyfill | vs `Date` |
+|---|--:|--:|--:|--:|--:|--:|
+| Parse ISO-8601 UTC | 129 | **37** | 292 | 314 | 2,793 | 4× |
+| Parse ISO-8601 with offset | 146 | **56** | 1,158 | 353 | 3,177 | 3× |
+| Format to ISO-8601 | 507 | **62** | 647 | 1,390 | 2,763 | 8× |
+| Format `YYYY-MM-DD` | 519 | **43** | 1,427 | 5,973 | 5,069 | 12× |
+| Add 7 days | 88 | **4** | 998 | 7,431 | 8,144 | 22× |
+| Add 1 month, clamped | 228 | **34** | 2,753 | 7,539 | 8,121 | 7× |
+| Truncate to start of day | 111 | **11** | 600 | 5,395 | 6,609 | 10× |
+| Calendar days between | 219 | **6** | 1,506 | 12,816 | 51,235 | 38× |
+| Read all six fields | 111 | **73** | 181 | 6,377 | 4,798 | 2× |
+| ISO day of week | 47 | **6** | 146 | 4,829 | 4,485 | 8× |
+| ISO-8601 week number | 232 | **27** | 6,142 | 5,135 | 5,425 | 9× |
+| Parse → +30 days → format | 719 | **102** | 1,905 | 9,217 | 12,385 | 7× |
+
+### Bun 1.3.14 (JavaScriptCore)
+
+Bun has no native Temporal, so that column is absent. JavaScriptCore's `Date` formats roughly
+three times faster than V8's, which is why the formatting margins here are much narrower — the
+same library code against a stronger baseline.
+
+| Operation | `Date` | **chronofast** | Day.js | temporal-polyfill | vs `Date` |
+|---|--:|--:|--:|--:|--:|
+| Parse ISO-8601 UTC | 156 | **28** | 276 | 2,984 | 6× |
+| Parse ISO-8601 with offset | 165 | **43** | 680 | 3,645 | 4× |
+| Format to ISO-8601 | 162 | **101** | 248 | 3,265 | 2× |
+| Format `YYYY-MM-DD` | 176 | **59** | 1,114 | 5,350 | 3× |
+| Add 7 days | 73 | **3** | 671 | 9,331 | 27× |
+| Add 1 month, clamped | 160 | **34** | 2,148 | 8,982 | 5× |
+| Truncate to start of day | 82 | **4** | 533 | 7,573 | 19× |
+| Calendar days between | 167 | **3** | 1,466 | 31,700 | 66× |
+| Read all six fields | 63 | **30** | 118 | 5,095 | 2× |
+| ISO day of week | 48 | **3** | 114 | 4,910 | 18× |
+| ISO-8601 week number | 186 | **25** | 4,886 | 5,422 | 7× |
+| Parse → +30 days → format | 399 | **135** | 1,178 | 13,617 | 3× |
 
 ### Time zones
 
-| Operation | `Date` + `Intl` | **chronofast** | temporal-polyfill | vs `Date` |
-|---|--:|--:|--:|--:|
-| UTC offset for an instant | 369.9k | **45.75M** | 151.1k | 124× |
-| Format as local ISO with offset | 317.1k | **10.79M** | 119.8k | 34× |
-| Add 1 local day across DST | 114.1k | **15.83M** | 89.5k | 139× |
-| Local midnight | 105.6k | **16.35M** | 88.5k | 155× |
-| Bucket 10,000 instants by local day | 34.3 | **8.9k** | 10.9 | 261× |
+| Operation | `Date` + `Intl` | **chronofast** | Day.js | Temporal native | temporal-polyfill | vs `Date` |
+|---|--:|--:|--:|--:|--:|--:|
+| **Node 24.13** | | | | | | |
+| UTC offset for an instant | 2,621 | **20** | 49,969 | 133,467 | 8,017 | 129× |
+| Format as local ISO with offset | 3,083 | **94** | 56,175 | 201,800 | 7,676 | 33× |
+| Add 1 local day across DST | 8,434 | **50** | *wrong answer* | 204,383 | 10,094 | 170× |
+| Local midnight | 9,328 | **69** | 112,614 | 203,771 | 9,239 | 135× |
+| Bucket 10,000 instants by local day | 32,004,300 | **230,080** | 913,779,300 | 1,862,478,600 | 89,347,500 | 139× |
+| **Bun 1.3.14** | | | | | | |
+| UTC offset for an instant | 1,925 | **14** | 36,100 | — | 7,067 | 138× |
+| Format as local ISO with offset | 2,108 | **141** | 39,994 | — | 8,581 | 15× |
+| Add 1 local day across DST | 6,126 | **53** | *wrong answer* | — | 12,980 | 115× |
+| Local midnight | 6,676 | **66** | 78,650 | — | 9,963 | 102× |
+| Bucket 10,000 instants by local day | 22,049,800 | **199,586** | 553,411,100 | — | 84,192,800 | 110× |
 
 **Read these rows carefully.** chronofast's advantage here is the offset cache. The `Date`
 baseline caches the `Intl.DateTimeFormat` — the single biggest win available to it — but not
-the offset, because the naive approach has nowhere obvious to put such a cache. These rows
-say *caching beats not caching*, which is a fair thing to measure but is not the same claim
-as *chronofast is 124× faster than Intl*.
+the offset, because the naive approach has nowhere obvious to put such a cache. These rows say
+*caching beats not caching*, which is a fair thing to measure but is not the same claim as
+*chronofast is 129× faster than Intl*.
+
+Two results here are worth more attention than chronofast's own numbers:
+
+**Native Temporal is the slowest contender on zones**, by an order of magnitude over its own
+polyfills — 133 µs for one offset lookup, 1.86 s to bucket ten thousand instants. V8's
+`ZonedDateTime` goes back through ICU on every call with no offset caching. If you are choosing
+between Temporal and something else because of zone-heavy workloads, this does not improve when
+the native implementation ships; it is the native implementation.
+
+**Day.js is excluded from the DST row because it gets it wrong.** `dayjs(ms).tz(zone).add(1,
+'day')` moves 24 hours across a spring-forward boundary, where `Date`, both Temporal polyfills,
+native Temporal and chronofast all move 23. Its `.tz()` is a formatting wrapper over a UTC
+instant rather than a zone-aware calendar, so `add` stays on the instant timeline and the local
+day is lost — and the offset it then prints is the pre-arithmetic one. The correctness gate
+caught it in every run on both runtimes, so the row has no timing.
+
+### One API note the numbers expose
+
+"Read all six calendar fields" is the only row where the class layer costs meaningfully more
+than the raw functions — 73 ns against the raw layer's 25 ns. Reading `p.year`, `p.month`,
+`p.day` … is six independent getters doing six civil conversions of the same value.
+`ChronoPlain#fields()` does one:
+
+```ts
+const p = ChronoPlain.parse('2024-03-15T10:30:00');
+
+p.year; p.month; p.day; p.hour; p.minute; p.second;   // 69 ns - six conversions
+const { year, month, day, hour, minute, second } = p.fields();   // 27 ns - one
+```
+
+Reach for `fields()` whenever you want three or more fields off the same value.
 
 ### Allocation
 
-Adding seven days to an instant, approximate bytes allocated per operation:
+Adding seven days to an instant, approximate bytes allocated per operation on Node:
 
-| | bytes/op |
-|---|--:|
-| chronofast (raw) | **17** |
-| chronofast (class) | 97 |
-| `Date` | 145 |
-| `@js-temporal/polyfill` | 8,453 |
-| `temporal-polyfill` | 23,170 |
+| | from epoch ms | from an existing instance |
+|---|--:|--:|
+| chronofast (raw) | **16** | — |
+| chronofast (class) | 97 | **16** |
+| `Date` | 145 | 129 |
+| Day.js | 1,220 | 644 |
+| Temporal native | 3,069 | 2,076 |
+| `@js-temporal/polyfill` | 8,275 | 7,298 |
+| `temporal-polyfill` | 22,969 | 9,920 |
 
-In a request handler touching a few dates this is irrelevant. In a loop over ten thousand
-log lines it is the whole story, and it shows up in the p99 as GC pauses.
-
-Nothing is timed until it has been proved correct: every contender is compared against a
-reference on 200 spread indices first, and any that disagrees is reported and excluded. A
-fast wrong answer is not a result.
+In a request handler touching a few dates this is irrelevant. In a loop over ten thousand log
+lines it is the whole story, and it shows up in the p99 as GC pauses.
 
 ## API
 
@@ -112,7 +188,7 @@ ChronoInstant.now()
 | **Truncation** | `startOfMinute` `startOfHour` `startOfDay` `startOfWeek` `startOfMonth` `startOfYear` |
 | **Compare** | `equals` `isBefore` `isAfter` `daysUntil` `monthsUntil` `ChronoInstant.compare` |
 | **Output** | `toISOString()` `toISODate()` `toDate()` `toJSON()` `epochMilliseconds` |
-| **Convert** | `inZone(tz)` → `ChronoZoned` |
+| **Convert** | `inZone(tz)` — same instant &nbsp;·&nbsp; `asLocalIn(tz)` — same reading |
 
 Month arithmetic clamps to the end of the month and is leap-aware:
 
@@ -130,7 +206,7 @@ ChronoZoned.fromLocal('Europe/Bratislava', 2024, 3, 15, 11, 30)
 ```
 
 Same field and output surface as `ChronoInstant`, read in local time, plus `offset`,
-`offsetHours`, `withZone(tz)` and `toInstant()`.
+`offsetHours`, `withZone(tz)`, `withZoneSameLocal(tz)`, `toInstant()` and `toPlain()`.
 
 The distinction that matters is between **exact-time** and **calendar** units:
 
@@ -143,6 +219,116 @@ z.addDays(1)     // the same wall-clock time tomorrow — 23 hours, because DST 
 
 `addDays`, `addMonths`, `addYears` and `startOfDay` all resolve through local wall time, so
 they do what a calendar says rather than what a stopwatch says.
+
+### Reading "now" — say which clock you mean
+
+At 09:07 in Bratislava the instant and the local wall clock are two different readings.
+Picking the wrong one is silent: the code runs, every timestamp is off by the local offset,
+and anything near midnight lands on the wrong day. So chronofast makes you say which:
+
+```ts
+import { Now } from 'chronofast';
+
+Now.instant()               // the moment; its fields read in UTC     -> 07:07
+Now.plainDateTimeISO()      // the local wall clock, no zone attached -> 09:07
+Now.zonedDateTimeISO()      // the local wall clock, carrying its zone -> 09:07+02:00
+Now.plainDateISO()          // today's LOCAL date, at midnight
+Now.timeZoneId()            // 'Europe/Bratislava'
+Now.minutesSinceMidnight()  // 547
+```
+
+Every method takes an optional zone and defaults to the system one. The names mirror
+`Temporal.Now` on purpose, so migrating is a rename.
+
+`ChronoInstant.now()` still exists and is still UTC — correct for storage, comparison and
+audit trails, wrong for anything a user reads.
+
+A value that is a wall-clock reading should be serialised with `toPlainISOString()`, which
+omits the `Z` rather than claiming an offset the value does not have:
+
+```ts
+Now.plainDateTimeISO().toISOString()        // '2026-09-02T09:07:00.000Z'  <- lies
+Now.plainDateTimeISO().toPlainISOString()   // '2026-09-02T09:07:00'       <- honest
+```
+
+### Field numbering is human, not `Date`-style
+
+| field | range | note |
+|---|---|---|
+| `month` | **1–12** | January is `1`. `Date#getUTCMonth()` returns `0` — chronofast does not. |
+| `day` | 1–31 | |
+| `hour` | 0–23 | |
+| `minute`, `second` | 0–59 | no leap seconds |
+| `millisecond` | 0–999 | the finest precision carried |
+| `dayOfWeek` | **1–7** | ISO: Monday is `1`, Sunday is `7` |
+| `dayOfYear` | 1–366 | 1 January is `1` |
+| `weekOfYear` | 1–53 | ISO-8601; see `weekYear` |
+
+```ts
+ChronoInstant.parse('2024-09-01T00:00:00Z').month   // 9, not 8
+```
+
+If you need `Date`'s Sunday-first numbering for interop, it exists under a name that cannot
+be confused with the ISO one:
+
+```ts
+import { dayOfWeekSunday0 } from 'chronofast/core';   // 0 = Sunday … 6 = Saturday
+```
+
+Every range above is stated in the JSDoc, so it appears in editor tooltips and in the
+generated `.d.ts` rather than only here.
+
+### Instants and wall-clock readings are different things
+
+`2000-09-01T10:00Z` names a moment. `2000-09-01T10:00` does not — it is a reading off a
+clock, and it only becomes a moment once you say which clock. chronofast keeps that
+distinction visible instead of guessing.
+
+**You have a value you know was recorded in a zone.** A date picker, a CSV column, a legacy
+database field:
+
+```ts
+ChronoZoned.parse('2000-09-01T10:00', 'Europe/Bratislava').toISOString()
+// '2000-09-01T10:00:00.000+02:00'   — stays 10:00, resolves to 08:00Z
+
+ChronoZoned.fromLocal('Europe/Bratislava', 2000, 9, 1, 10, 0)   // same, from components
+ChronoInstant.parse('2000-09-01T10:00').asLocalIn('Europe/Bratislava')   // same, from an instant
+```
+
+The offset comes from the tz database for *that date*, so January gives `+01:00` and
+September `+02:00` without you encoding a DST rule anywhere.
+
+**A string that carries a designator is an exact instant**, and the zone only affects how
+it is displayed:
+
+```ts
+ChronoZoned.parse('2000-09-01T10:00:00Z', 'Europe/Bratislava').toISOString()
+// '2000-09-01T12:00:00.000+02:00'   — a designator means you already said which moment
+```
+
+So `parse` reads the string, not your intent: `Z` or `±HH:mm` means an instant, nothing
+means a local reading, and a date-only string means local midnight.
+
+### The two conversions, which are easy to confuse
+
+| | instant | wall-clock reading |
+|---|---|---|
+| `t.inZone(tz)` | unchanged | **moves** |
+| `t.asLocalIn(tz)` | **moves** | unchanged |
+| `z.withZone(tz)` | unchanged | **moves** |
+| `z.withZoneSameLocal(tz)` | **moves** | unchanged |
+
+```ts
+const t = ChronoInstant.parse('2000-09-01T10:00:00.000Z');
+
+t.inZone('Europe/Bratislava').toISOString()     // '...T12:00:00.000+02:00'  same moment
+t.asLocalIn('Europe/Bratislava').toISOString()  // '...T10:00:00.000+02:00'  same reading
+```
+
+`z.toPlain()` goes back the other way, returning the wall-clock reading as a UTC instant.
+
+Every one of these accepts a disambiguation mode for the two days a year when a local time
+is ambiguous or does not exist.
 
 ### Ambiguous and nonexistent local times
 
@@ -203,7 +389,8 @@ toISO(addDays(parseISO('2024-03-15T10:30:00.000Z'), 7));
 ```
 
 Treat it as a sharp tool: it uses module-scoped scratch slots for multi-value returns, so
-read the results before the next call.
+read the results before the next call. It is also the smaller import — see
+[what you actually pay in a bundle](#what-you-actually-pay-in-a-bundle).
 
 ## Limitations, stated plainly
 
@@ -257,6 +444,35 @@ stack traces and tree-shaking useful. Reproduce both with `npm run size`.
 <script src="https://unpkg.com/chronofast"></script>
 <script>console.log(chronofast.ChronoInstant.now().toISOString());</script>
 ```
+
+### What you actually pay in a bundle
+
+Measured with esbuild, `bundle: true, minify: true`:
+
+| your import | bundled | gzip |
+|---|--:|--:|
+| `{ ChronoInstant }` from `chronofast` | 14.20 kB | **4.98 kB** |
+| `{ ChronoInstant, ChronoZoned }` | 14.21 kB | **4.98 kB** |
+| `{ parseISO, toISO, addDays }` from `chronofast/core` | 4.29 kB | **1.76 kB** |
+| `{ parseISO }` from `chronofast/core` | 3.21 kB | **1.28 kB** |
+
+Note rows one and two: they are the same size. **The class API does not tree-shake the
+time zone engine away.** `ChronoInstant.inZone()` statically references `ChronoZoned`,
+which pulls in `zone.js`, so importing `ChronoInstant` alone still costs you the whole
+engine — and adding `ChronoZoned` to the import costs nothing extra, because it was
+already in your bundle.
+
+That is a deliberate trade: `inZone()` is the most useful method on the type, and 5 kB
+gzipped is a reasonable price for it. If you only ever work in UTC and the kilobytes
+matter, import the raw layer instead and tree-shaking works properly:
+
+```ts
+import { parseISO, addDays, toISO } from 'chronofast/core';   // 1.76 kB gzipped
+```
+
+Minification only happens in a production build — `vite build`, webpack
+`mode: 'production'`, `next build`. A dev server serves it unminified (6.77 kB gzipped),
+and Rollup or esbuild invoked directly minify only when told to.
 
 ### Which JavaScript version
 

@@ -27,3 +27,18 @@ for (const [f, r, g, b] of rows) {
 console.log('  ' + '-'.repeat(48));
 console.log(`  ${'TOTAL'.padEnd(14)} ${pad(kb(raw), 9)} ${pad(kb(gz), 11)} ${pad(kb(br), 11)}`);
 console.log('\n  Note: unminified. A bundler minifying this will land well below the gzip figure.\n');
+
+console.log('\n  lib/ is unminified on purpose: bundlers minify anyway, and readable output');
+console.log('  keeps stack traces and tree-shaking useful.\n');
+
+if (existsSync('browser')) {
+  console.log('  browser bundles (minified, for direct <script> / CDN use)\n');
+  console.log('  ' + 'file'.padEnd(30) + 'raw'.padStart(9) + 'gzip'.padStart(11) + 'brotli'.padStart(11));
+  console.log('  ' + '-'.repeat(61));
+  for (const f of readdirSync('browser').filter((x) => x.endsWith('.js')).sort()) {
+    const buf = readFileSync(`browser/${f}`);
+    console.log(`  ${f.padEnd(30)} ${pad(kb(buf.length), 9)} ${pad(kb(gzipSync(buf, { level: 9 }).length), 11)} ` +
+                `${pad(kb(brotliCompressSync(buf).length), 11)}`);
+  }
+  console.log('');
+}

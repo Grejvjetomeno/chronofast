@@ -28,6 +28,11 @@ if (!sc) { console.log(JSON.stringify({ status: 'error', message: `no scenario $
 async function buildImpl() {
   if (contenderId === 'date') return sc.impls.date ? sc.impls.date() : null;
 
+  if (contenderId === 'dayjs') {
+    const D = (await import('./dayjs-ns.js')).default;
+    return sc.impls.dayjs ? sc.impls.dayjs(D) : null;
+  }
+
   if (contenderId === 'chrono-raw' || contenderId === 'chrono-obj') {
     const C = await import('./chronofast-ns.js');
     const f = contenderId === 'chrono-raw' ? sc.impls.chronoRaw : sc.impls.chronoObj;

@@ -21,6 +21,7 @@ import { fmtOps, fmtNs } from './runner.js';
 import * as TP from 'temporal-polyfill';
 import * as JT from '@js-temporal/polyfill';
 import * as CHRONO from './chronofast-ns.js';
+import DAYJS from './dayjs-ns.js';
 
 const argv = process.argv.slice(2);
 const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
@@ -49,6 +50,7 @@ const CONTENDERS = [
 if (nativeTemporal) CONTENDERS.push({ id: 'temporal-native', label: 'Temporal (native)', kind: 'temporal', T: globalThis.Temporal });
 if (!tpIsNative) CONTENDERS.push({ id: 'temporal-polyfill', label: 'temporal-polyfill', kind: 'temporal', T: TP.Temporal });
 CONTENDERS.push({ id: 'js-temporal', label: '@js-temporal/polyfill', kind: 'temporal', T: JT.Temporal });
+CONTENDERS.push({ id: 'dayjs', label: 'Day.js', kind: 'dayjs', lib: DAYJS });
 
 console.log('='.repeat(78));
 console.log(`  ${runtime.name} ${runtime.version}  (${runtime.engine})`);
@@ -66,7 +68,7 @@ function buildImpl(sc, c) {
   if (!f) return null;
   try {
     if (c.kind === 'temporal') return f(c.T);
-    if (c.kind === 'chronoRaw' || c.kind === 'chronoObj') return f(c.lib);
+    if (c.kind === 'chronoRaw' || c.kind === 'chronoObj' || c.kind === 'dayjs') return f(c.lib);
     return f();
   } catch (e) { return { error: String((e && e.message) || e) }; }
 }

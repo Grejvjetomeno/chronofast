@@ -9,7 +9,7 @@ const CONFIGS = [
 ];
 
 // Charts carry v2; v1 appears only in the before/after section.
-const ORDER = ['date', 'chrono-raw', 'chrono-obj', 'temporal-native', 'temporal-polyfill', 'js-temporal'];
+const ORDER = ['date', 'chrono-raw', 'chrono-obj', 'temporal-native', 'temporal-polyfill', 'js-temporal', 'dayjs'];
 
 const SHORT = {
   'date': 'Date',
@@ -18,9 +18,10 @@ const SHORT = {
   'temporal-native': 'Temporal native',
   'temporal-polyfill': 'temporal-polyfill',
   'js-temporal': '@js-temporal',
+  'dayjs': 'Day.js',
 };
 // Fixed slot per bar position; validated as a sequence in both modes.
-const SLOT = { 'date': 1, 'chrono-raw': 2, 'chrono-obj': 3, 'temporal-native': 4, 'temporal-polyfill': 4, 'js-temporal': 5 };
+const SLOT = { 'date': 1, 'chrono-raw': 2, 'chrono-obj': 3, 'temporal-native': 4, 'temporal-polyfill': 4, 'js-temporal': 5, 'dayjs': 2 };
 
 const runs = [];
 for (const c of CONFIGS) {

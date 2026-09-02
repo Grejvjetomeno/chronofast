@@ -6,22 +6,28 @@ let fails = 0;
 const bad = (m) => { fails++; console.log('  FAIL ' + m); };
 
 const esm = await import('../browser/chronofast.min.js');
-const EXPECTED = ['AmbiguousTimeError', 'ChronoInstant', 'ChronoZoned',
-                  'InvalidInstantError', 'UnknownTimeZoneError'];
+const EXPECTED = ['AmbiguousTimeError', 'ChronoInstant', 'ChronoPlain', 'ChronoZoned',
+                  'InvalidInstantError', 'Now', 'UnknownTimeZoneError'];
 const got = Object.keys(esm).sort();
 if (JSON.stringify(got) !== JSON.stringify(EXPECTED)) bad(`ESM exports: got [${got}]`);
 
-const { ChronoInstant, ChronoZoned, UnknownTimeZoneError } = esm;
+const { ChronoInstant, ChronoPlain, ChronoZoned, UnknownTimeZoneError, Now } = esm;
 const t = ChronoInstant.parse('2024-03-15T10:30:00.000Z');
 if (t.toISOString() !== '2024-03-15T10:30:00.000Z') bad('round trip');
-if (t.year !== 2024 || t.month !== 3 || t.day !== 15) bad('fields');
-if (ChronoInstant.parse('2024-01-31T00:00:00.000Z').addMonths(1).toISODate() !== '2024-02-29') bad('leap clamp');
+const tp = ChronoPlain.parse('2024-03-15T10:30:00.123');
+if (tp.year !== 2024 || tp.month !== 3 || tp.day !== 15) bad('fields');
+if (ChronoPlain.parse('2024-01-31T00:00:00').addMonths(1).toISODate() !== '2024-02-29') bad('leap clamp');
 const z = t.inZone('Europe/Bratislava');
 if (z.toISOString() !== '2024-03-15T11:30:00.000+01:00') bad('zoned format');
 const dst = ChronoZoned.fromEpochMs(Date.parse('2024-03-30T12:00:00Z'), 'Europe/Bratislava');
 if ((dst.addDays(1).epochMilliseconds - dst.epochMilliseconds) / 3600000 !== 23) bad('DST day is 23h');
 try { t.inZone('Not/AZone'); bad('bad zone did not throw'); }
 catch (e) { if (!(e instanceof UnknownTimeZoneError)) bad('wrong error type: ' + e.constructor.name); }
+
+// the split must survive minification: neither type may gain the other's capabilities
+for (const f of ['year', 'hour', 'addMonths']) if (f in t) bad(`ChronoInstant kept ${f} after minification`);
+for (const f of ['epochMilliseconds', 'toDate', 'inZone']) if (f in tp) bad(`ChronoPlain kept ${f} after minification`);
+if (typeof Now.plainDateTimeISO !== 'function') bad('Now missing from the bundle');
 
 // a wide differential sweep against Date, through the minified code
 let seed = 99;

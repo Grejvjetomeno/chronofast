@@ -5,7 +5,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { toISO, toISODate, parseISO } from '../lib/core.js';
-import { ChronoInstant } from '../lib/index.js';
+import { ChronoInstant, ChronoPlain } from '../lib/index.js';
 import { EDGE_INSTANTS, scattered, clustered, utc } from './helpers.js';
 
 describe('toISO — exact output', () => {
@@ -108,6 +108,7 @@ describe('format/parse round trip', () => {
 
 describe('ChronoInstant output methods', () => {
   const t = ChronoInstant.parse('2024-03-15T10:30:00.123Z');
+  const p = ChronoPlain.parse('2024-03-15T10:30:00.123');
   test('toISOString', () => assert.equal(t.toISOString(), '2024-03-15T10:30:00.123Z'));
   test('toISODate', () => assert.equal(t.toISODate(), '2024-03-15'));
   test('toString equals toISOString', () => assert.equal(t.toString(), t.toISOString()));

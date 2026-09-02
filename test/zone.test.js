@@ -13,7 +13,7 @@ import {
   zoneStats, resetZoneCaches, hasFastOffsetPath, AmbiguousTimeError,
 } from '../lib/zone.js';
 import { parseISO, cY, cM, cD, cH, MS_HOUR } from '../lib/core.js';
-import { ChronoZoned, ChronoInstant } from '../lib/index.js';
+import { ChronoZoned, ChronoInstant, ChronoPlain } from '../lib/index.js';
 import { ZONES, scattered, clustered } from './helpers.js';
 
 const at = (s) => parseISO(s);
@@ -353,5 +353,144 @@ describe('ChronoZoned', () => {
 describe('capability reporting', () => {
   test('hasFastOffsetPath returns a boolean', () => {
     assert.equal(typeof hasFastOffsetPath(), 'boolean');
+  });
+});
+
+describe('a zone designator decides what a string means', () => {
+  const TZ = 'Europe/Bratislava';
+
+  test('no designator is a wall-clock reading in the zone', () => {
+    // The case that motivated this: 10:00 known to be Bratislava must stay 10:00.
+    const z = ChronoZoned.parse('2000-09-01T10:00', TZ);
+    assert.equal(z.toISOString(), '2000-09-01T10:00:00.000+02:00');
+    assert.equal(z.toInstant().toISOString(), '2000-09-01T08:00:00.000Z');
+  });
+
+  test('a trailing Z is an exact instant, merely displayed in the zone', () => {
+    const z = ChronoZoned.parse('2000-09-01T10:00:00Z', TZ);
+    assert.equal(z.toISOString(), '2000-09-01T12:00:00.000+02:00');
+  });
+
+  test('an explicit offset wins over the zone for the instant', () => {
+    const z = ChronoZoned.parse('2000-09-01T10:00:00+05:00', TZ);
+    assert.equal(z.toInstant().toISOString(), '2000-09-01T05:00:00.000Z');
+    assert.equal(z.toISOString(), '2000-09-01T07:00:00.000+02:00');
+  });
+
+  test('a date-only string is a local date, i.e. local midnight', () => {
+    assert.equal(ChronoZoned.parse('2000-09-01', TZ).toISOString(), '2000-09-01T00:00:00.000+02:00');
+  });
+
+  test('the offset used is the one in force on that date, not a fixed guess', () => {
+    assert.equal(ChronoZoned.parse('2000-01-15T10:00', TZ).toISOString(), '2000-01-15T10:00:00.000+01:00');
+    assert.equal(ChronoZoned.parse('2000-07-15T10:00', TZ).toISOString(), '2000-07-15T10:00:00.000+02:00');
+  });
+
+  test('a lowercase z still counts as a designator', () => {
+    assert.equal(ChronoZoned.parse('2000-09-01T10:00:00z', TZ).toInstant().toISOString(),
+                 '2000-09-01T10:00:00.000Z');
+  });
+
+  test('an expanded year without a designator is still wall time', () => {
+    const z = ChronoZoned.parse('+002000-09-01T10:00', TZ);
+    assert.equal(z.toISOString(), '2000-09-01T10:00:00.000+02:00');
+  });
+
+  test('malformed input stays invalid rather than being reinterpreted', () => {
+    assert.ok(Number.isNaN(ChronoZoned.parse('nonsense', TZ).epochMilliseconds));
+  });
+
+  test('disambiguation is honoured for a nonexistent local time', () => {
+    assert.equal(ChronoZoned.parse('2024-03-31T02:30', TZ).toISOString(),
+                 '2024-03-31T03:30:00.000+02:00');
+    assert.throws(() => ChronoZoned.parse('2024-03-31T02:30', TZ, 'reject'), AmbiguousTimeError);
+  });
+
+  test('disambiguation is honoured for an ambiguous local time', () => {
+    const earlier = ChronoZoned.parse('2024-10-27T02:30', TZ, 'earlier');
+    const later = ChronoZoned.parse('2024-10-27T02:30', TZ, 'later');
+    assert.equal(later.epochMilliseconds - earlier.epochMilliseconds, H);
+    assert.throws(() => ChronoZoned.parse('2024-10-27T02:30', TZ, 'reject'), AmbiguousTimeError);
+  });
+
+  test('parse agrees with fromLocal for the same fields', () => {
+    for (const [y, mo, d, h, mi] of [[2000, 9, 1, 10, 0], [2024, 1, 15, 23, 59], [2024, 7, 4, 0, 0]]) {
+      const p = (n, w) => String(n).padStart(w, '0');
+      const str = `${p(y, 4)}-${p(mo, 2)}-${p(d, 2)}T${p(h, 2)}:${p(mi, 2)}`;
+      assert.equal(ChronoZoned.parse(str, TZ).epochMilliseconds,
+                   ChronoZoned.fromLocal(TZ, y, mo, d, h, mi).epochMilliseconds, str);
+    }
+  });
+});
+
+describe('inZone (a moment) vs assumeZone (a reading)', () => {
+  const TZ = 'Europe/Bratislava';
+  const t = ChronoInstant.parse('2000-09-01T10:00:00.000Z');
+  const p = ChronoPlain.parse('2000-09-01T10:00:00.000');
+
+  test('inZone keeps the moment and moves the reading', () => {
+    assert.equal(t.inZone(TZ).epochMilliseconds, t.ms);
+    assert.equal(t.inZone(TZ).hour, 12);
+  });
+
+  test('assumeZone keeps the reading and produces a moment', () => {
+    assert.equal(p.assumeZone(TZ).hour, 10);
+    assert.equal(p.assumeZone(TZ).epochMilliseconds, t.ms - 2 * H);
+  });
+
+  test('assumeZone preserves every field, for every zone', () => {
+    for (const { id } of ZONES) {
+      const z = p.assumeZone(id);
+      assert.equal(z.year, p.year, id);
+      assert.equal(z.month, p.month, id);
+      assert.equal(z.day, p.day, id);
+      assert.equal(z.hour, p.hour, id);
+      assert.equal(z.minute, p.minute, id);
+    }
+  });
+
+  test('assumeZone then toPlain round trips', () => {
+    for (const { id } of ZONES) {
+      assert.equal(p.assumeZone(id).toPlain().wall, p.wall, id);
+    }
+  });
+
+  test('toUtcPlain then assumeZone is the documented reinterpretation', () => {
+    assert.equal(t.toUtcPlain().assumeZone(TZ).hour, 10);
+    assert.equal(t.toUtcPlain().assumeZone(TZ).epochMilliseconds, t.ms - 2 * H);
+  });
+
+  test('assumeZone honours disambiguation', () => {
+    const gap = ChronoPlain.parse('2024-03-31T02:30:00.000');
+    assert.equal(gap.assumeZone(TZ).toISOString(), '2024-03-31T03:30:00.000+02:00');
+    assert.throws(() => gap.assumeZone(TZ, 'reject'), AmbiguousTimeError);
+  });
+
+  test('assumeZone rejects an unknown zone', () => {
+    assert.throws(() => p.assumeZone('Not/AZone'), Error);
+  });
+});
+
+describe('withZone vs withZoneSameLocal', () => {
+  const z = ChronoZoned.fromLocal('Europe/London', 2024, 6, 15, 9, 0);
+
+  test('withZone keeps the instant', () => {
+    const w = z.withZone('America/New_York');
+    assert.equal(w.epochMilliseconds, z.epochMilliseconds);
+    assert.equal(w.hour, 4);
+  });
+
+  test('withZoneSameLocal keeps the wall clock', () => {
+    const w = z.withZoneSameLocal('America/New_York');
+    assert.equal(w.hour, 9);
+    assert.equal(w.minute, 0);
+    assert.equal(w.epochMilliseconds - z.epochMilliseconds, 5 * H);
+  });
+
+  test('withZoneSameLocal to the same zone is identity', () => {
+    for (const { id } of ZONES) {
+      const a = ChronoZoned.fromLocal(id, 2024, 6, 15, 9, 0);
+      assert.equal(a.withZoneSameLocal(id).epochMilliseconds, a.epochMilliseconds, id);
+    }
   });
 });

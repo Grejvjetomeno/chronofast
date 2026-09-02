@@ -8,7 +8,7 @@ const CONFIGS = [
 ];
 
 // The headline tables carry v2; v1 gets its own before/after section further down.
-const ORDER = ['date', 'chrono-raw', 'chrono-obj', 'temporal-native', 'temporal-polyfill', 'js-temporal'];
+const ORDER = ['date', 'chrono-raw', 'chrono-obj', 'temporal-native', 'temporal-polyfill', 'js-temporal', 'dayjs'];
 const SHORT = {
   'date': 'Date',
   'chrono-raw': 'chronoFast raw',
@@ -16,6 +16,7 @@ const SHORT = {
   'temporal-native': 'Temporal native',
   'temporal-polyfill': 'temporal-polyfill',
   'js-temporal': '@js-temporal',
+  'dayjs': 'Day.js',
 };
 // Scenarios whose data is clustered in time, so the v2 memos actually get hits.
 
