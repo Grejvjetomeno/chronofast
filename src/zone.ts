@@ -17,7 +17,7 @@
 // the current IANA database. offsetAtUncached() is the assumption-free path.
 
 import type { EpochMs, WallMs, OffsetMs, TimeZoneId } from './brand.js';
-import { unsafeEpochMs, unsafeWallMs, unsafeOffsetMs } from './brand.js';
+import { InvalidInstantError, unsafeEpochMs, unsafeWallMs, unsafeOffsetMs } from './brand.js';
 import { MS_SEC, MS_MIN, MS_HOUR, MS_DAY, daysFromCivil, civilFromDays, unpack, daysInMonth,
          pad2, pad3, pad4, year6, isRepresentable,
          cY, cM, cD, cH, cMi, cS, cMs } from './core.js';
@@ -40,6 +40,13 @@ type Entry = Run | Split;
 
 const MIN_EPOCH_MS = -8.64e15;
 const MAX_EPOCH_MS = 8.64e15;
+
+const resolvedEpochMs = (ms: number): EpochMs => {
+  if (!(ms >= MIN_EPOCH_MS && ms <= MAX_EPOCH_MS)) {
+    throw new InvalidInstantError(ms);
+  }
+  return unsafeEpochMs(ms);
+};
 
 /**
  * `timeZoneName: 'longOffset'` is ECMA-402 (2021): Chrome 95+, Firefox 91+, Safari 15.4+,
@@ -94,7 +101,8 @@ function zone(tz: TimeZoneId | string): Zone {
   return z;
 }
 
-// [6] Read the offset out of a "…, GMT+01:00" tail. "GMT" alone means zero.
+// [6] Read the offset out of a "…, GMT+01:00" tail (optionally with seconds).
+// "GMT" alone means zero.
 function rawOffset(zc: Zone, utcMs: number): number {
   zc.intlCalls++;
   if (zc.offFmt === null) return offsetFallback(zc, utcMs);
@@ -282,7 +290,7 @@ export function utcFromWall(
   const oB = offsetZ(zc, beforeProbe);
   const oA = offsetZ(zc, afterProbe);
   const u1 = wallMs - oB;
-  if (oB === oA) return unsafeEpochMs(u1);
+  if (oB === oA) return resolvedEpochMs(u1);
 
   const v1 = offsetZ(zc, u1) === oB;
   const u2 = wallMs - oA;
@@ -292,12 +300,12 @@ export function utcFromWall(
     if (disambiguation === 'reject') throw new AmbiguousTimeError(wallMs, zc.id);
     const earlier = u1 < u2 ? u1 : u2;
     const later = u1 < u2 ? u2 : u1;
-    return unsafeEpochMs(disambiguation === 'later' ? later : earlier);
+    return resolvedEpochMs(disambiguation === 'later' ? later : earlier);
   }
-  if (v1) return unsafeEpochMs(u1);
-  if (v2) return unsafeEpochMs(u2);
+  if (v1) return resolvedEpochMs(u1);
+  if (v2) return resolvedEpochMs(u2);
   if (disambiguation === 'reject') throw new AmbiguousTimeError(wallMs, zc.id);
-  return unsafeEpochMs(disambiguation === 'earlier' ? wallMs - oA : u1);
+  return resolvedEpochMs(disambiguation === 'earlier' ? wallMs - oA : u1);
 }
 
 /** Write local wall-clock fields into the core scratch slots. Zero allocation. */
@@ -330,8 +338,12 @@ export function startOfDayZoned(tz: TimeZoneId | string, utcMs: EpochMs): EpochM
 }
 
 /** A calendar day in local time: 23 or 25 hours when it crosses a DST boundary. */
-export const addDaysZoned = (tz: TimeZoneId | string, utcMs: EpochMs, n: number): EpochMs =>
-  utcFromWall(tz, unsafeWallMs(utcMs + offsetAt(tz, utcMs) + n * MS_DAY));
+export function addDaysZoned(tz: TimeZoneId | string, utcMs: EpochMs, n: number): EpochMs {
+  // A zero date duration is exact-time addition in Temporal. Re-resolving the unchanged
+  // wall time would collapse the later occurrence of a fold to compatible/earlier.
+  if (n === 0) { zone(tz); return utcMs; }
+  return utcFromWall(tz, unsafeWallMs(utcMs + offsetAt(tz, utcMs) + n * MS_DAY));
+}
 
 /**
  * Add `n` calendar months in local time, keeping the wall-clock time and **clamping to the
@@ -339,6 +351,8 @@ export const addDaysZoned = (tz: TimeZoneId | string, utcMs: EpochMs, n: number)
  * a DST boundary is correct.
  */
 export function addMonthsZoned(tz: TimeZoneId | string, utcMs: EpochMs, n: number): EpochMs {
+  // As above, zero is exact-time addition and must not re-resolve a fold.
+  if (n === 0) { zone(tz); return utcMs; }
   const wall = utcMs + offsetAt(tz, utcMs);
   const days = Math.floor(wall / MS_DAY);
   const tod = wall - days * MS_DAY;
@@ -361,10 +375,13 @@ function offsetString(off: number): string {
   const hit = offStrCache.get(off);
   if (hit !== undefined) return hit;
   const a = off < 0 ? -off : off;
-  const mins = Math.floor(a / MS_MIN);
-  const s = (off < 0 ? '-' : '+') + pad2((mins / 60) | 0) + ':' + pad2(mins % 60);
-  offStrCache.set(off, s);
-  return s;
+  const totalSeconds = Math.floor(a / MS_SEC);
+  const mins = (totalSeconds / 60) | 0;
+  const seconds = totalSeconds % 60;
+  let text = (off < 0 ? '-' : '+') + pad2((mins / 60) | 0) + ':' + pad2(mins % 60);
+  if (seconds !== 0) text += ':' + pad2(seconds);
+  offStrCache.set(off, text);
+  return text;
 }
 
 // Shared with core rather than reimplemented: the two had drifted, one using padStart and
@@ -385,7 +402,7 @@ export function formatZoned(tz: TimeZoneId | string, utcMs: EpochMs): string {
   let rem = wall - days * MS_DAY;
   civilFromDays(days);
   const y = cY;
-  if (y < 0 || y > 9999) {                       // rare, keep the readable path
+  if (y < 0 || y > 9999 || Math.abs(off) % MS_MIN !== 0) { // rare, keep the readable path
     unpack(wall);
     return year4or6(cY) + '-' + pad2(cM) + '-' + pad2(cD) + 'T' +
            pad2(cH) + ':' + pad2(cMi) + ':' + pad2(cS) + '.' + pad3(cMs) + offsetString(off);
@@ -473,6 +490,11 @@ export function resetZoneCaches(): void {
   zDayTz = null;
   zDayVal = '';
   offStrCache.clear();
+  if (fallbackFmt !== null) {
+    fallbackFmt.clear();
+    fallbackFmt = null;
+  }
+  FMT_CACHE.clear();
 }
 
 // ---------------------------------------------------------------- locale formatting

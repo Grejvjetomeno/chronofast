@@ -196,8 +196,9 @@ export let parsedOffsetMs = 0;
 /**
  * Parse an ISO-8601 timestamp to epoch milliseconds.
  *
- * Accepts `YYYY-MM-DD`, an optional `T`/space time part, an optional `Z` or `±HH:mm`
- * designator, and the extended `±YYYYYY` year form. A missing designator reads as UTC.
+ * Accepts `YYYY-MM-DD`, an optional `T`/space time part, an optional `Z` or numeric
+ * designator (`±HH`, `±HHMM`, `±HH:MM`, with optional seconds), and the extended
+ * `±YYYYYY` year form. A missing designator reads as UTC.
  * Returns `NaN` (as EpochMs) on malformed input - check with `isValidInstant`.
  */
 export function parseISO(s: string): EpochMs {
@@ -240,6 +241,10 @@ export function parseISO(s: string): EpochMs {
     const y = a0 * 1000 + a1 * 100 + a2 * 10 + a3;
     if (day > 28 && day > daysInMonth(y, mon)) return NOT_A_TIME;   // [2]
 
+    // parseISOWall reads this immediately after parseISO. The canonical path used to leave
+    // the offset from the preceding general-path parse behind, making a plain value depend
+    // on which string happened to be parsed before it.
+    parsedOffsetMs = 0;
     return unsafeEpochMs(
       daysFromCivilMemo(y, mon, day) * MS_DAY +                      // [4]
       hh * MS_HOUR + mi * MS_MIN + ss * MS_SEC + (h0 * 100 + h1 * 10 + h2),
@@ -354,18 +359,32 @@ function parseISOGeneral(s: string, n: number, keepWall = false): EpochMs {
   if (oh > 23) return NOT_A_TIME;
   i += 3;
 
-  let om = 0;
+  let om = 0, os = 0;
   if (i < n) {
-    if (s.charCodeAt(i) === 58) i++;
+    const colonForm = s.charCodeAt(i) === 58;
+    if (colonForm) i++;
     const om1 = s.charCodeAt(i) - 48, om2 = s.charCodeAt(i + 1) - 48;
     if (om1 >>> 0 > 9 || om2 >>> 0 > 9) return NOT_A_TIME;
     om = om1 * 10 + om2;
     if (om > 59) return NOT_A_TIME;
     i += 2;
+    if (i < n) {
+      // ISO permits historical offsets with seconds. Keep colon and compact forms
+      // internally consistent: +00:44:30 / +004430, never a mixed spelling.
+      if (colonForm) {
+        if (s.charCodeAt(i) !== 58) return NOT_A_TIME;
+        i++;
+      }
+      const os1 = s.charCodeAt(i) - 48, os2 = s.charCodeAt(i + 1) - 48;
+      if (os1 >>> 0 > 9 || os2 >>> 0 > 9) return NOT_A_TIME;
+      os = os1 * 10 + os2;
+      if (os > 59) return NOT_A_TIME;
+      i += 2;
+    }
     if (i !== n) return NOT_A_TIME;
   }
 
-  const off = oh * MS_HOUR + om * MS_MIN;
+  const off = oh * MS_HOUR + om * MS_MIN + os * MS_SEC;
   parsedOffsetMs = z === 45 ? -off : off;
   return parsedScannerValue(keepWall ? base : z === 45 ? base + off : base - off, keepWall);
 }
@@ -437,7 +456,7 @@ export function hasUtcDesignator(s: string): boolean {
 }
 
 /**
- * Did this string carry a zone designator - a trailing `Z` or a `±HH:mm` offset?
+ * Did this string carry a zone designator - a trailing `Z` or numeric offset?
  *
  * The distinction decides meaning, not just formatting: `2000-09-01T10:00Z` names an exact
  * instant, whereas `2000-09-01T10:00` names a wall-clock reading that is only an instant
@@ -445,13 +464,11 @@ export function hasUtcDesignator(s: string): boolean {
  * `YYYY-MM-DD`, and the sign of an expanded year, are never mistaken for an offset.
  */
 export function hasZoneDesignator(s: string): boolean {
-  let sep = -1;
-  for (let k = 8; k < s.length; k++) {
-    const c = s.charCodeAt(k);
-    if (c === 84 || c === 116 || c === 32) { sep = k; break; }   // 'T' | 't' | ' '
-  }
-  if (sep < 0) return false;                                     // date-only: a local date
-  for (let k = sep + 1; k < s.length; k++) {
+  // Start after the complete date, including a signed expanded year. This also recognizes
+  // a designator on the date-only spellings accepted by parseISO; previously those strings
+  // parsed as instants but ChronoZoned silently reinterpreted them as local midnight.
+  const start = s.charCodeAt(0) === 43 || s.charCodeAt(0) === 45 ? 13 : 10;
+  for (let k = start; k < s.length; k++) {
     const c = s.charCodeAt(k);
     if (c === 90 || c === 122 || c === 43 || c === 45) return true;   // 'Z' | 'z' | '+' | '-'
   }

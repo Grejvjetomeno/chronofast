@@ -401,8 +401,8 @@ ChronoZoned.parse('2000-09-01T10:00:00Z', 'Europe/Bratislava').toISOString()
 // '2000-09-01T12:00:00.000+02:00'   — a designator means you already said which moment
 ```
 
-So `ChronoZoned.parse` reads the string, not your intent: `Z` or `±HH:mm` means an instant,
-nothing means a local reading, and a date-only string means local midnight.
+So `ChronoZoned.parse` reads the string, not your intent: `Z` or a numeric offset means an
+instant, nothing means a local reading, and an undecorated date-only string means local midnight.
 
 ### The conversions, which are easy to confuse
 
