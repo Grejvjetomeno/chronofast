@@ -294,6 +294,34 @@ describe('calendar arithmetic in a zone', () => {
     assert.equal(toZonedISODate(tz, addMonthsZoned(tz, t, 1)), '2024-02-29');
   });
 
+  test('zero calendar arithmetic preserves the later occurrence of a fold', () => {
+    const later = utcFromWall(tz, at('2024-10-27T02:30:00Z'), 'later');
+    for (const zero of [0, -0]) {
+      assert.equal(addDaysZoned(tz, later, zero), later);
+      assert.equal(addMonthsZoned(tz, later, zero), later);
+    }
+  });
+
+  test('zero calendar arithmetic still validates the zone', () => {
+    assert.throws(() => addDaysZoned('Not/AZone', at('2024-01-01T00:00:00Z'), 0), RangeError);
+    assert.throws(() => addMonthsZoned('Not/AZone', at('2024-01-01T00:00:00Z'), 0), RangeError);
+  });
+
+  test('nonzero calendar arithmetic landing in a fold remains compatible', () => {
+    const after = utcFromWall(tz, at('2024-10-28T02:30:00Z'));
+    const earlier = utcFromWall(tz, at('2024-10-27T02:30:00Z'), 'earlier');
+    assert.equal(addDaysZoned(tz, after, -1), earlier);
+
+    const nextMonth = utcFromWall(tz, at('2024-11-27T02:30:00Z'));
+    assert.equal(addMonthsZoned(tz, nextMonth, -1), earlier);
+  });
+
+  test('nonzero calendar arithmetic landing in a gap remains compatible', () => {
+    const after = utcFromWall(tz, at('2024-04-01T02:30:00Z'));
+    assert.equal(formatZoned(tz, addDaysZoned(tz, after, -1)),
+                 '2024-03-31T03:30:00.000+02:00');
+  });
+
   test('startOfDayZoned is local midnight', () => {
     const t = at('2024-06-15T12:00:00Z');
     assert.equal(formatZoned(tz, startOfDayZoned(tz, t)), '2024-06-15T00:00:00.000+02:00');
@@ -557,5 +585,42 @@ describe('withZone vs withZoneSameLocal', () => {
       const a = ChronoZoned.fromLocal(id, 2024, 6, 15, 9, 0);
       assert.equal(a.withZoneSameLocal(id).epochMilliseconds, a.epochMilliseconds, id);
     }
+  });
+
+  test('fold identity preserves the later occurrence in the same zone', () => {
+    const tz = 'Europe/Bratislava';
+    const later = ChronoZoned.parse('2024-10-27T02:30', tz, 'later');
+    const recased = later.withZoneSameLocal('europe/bratislava');
+    for (const [name, result] of [
+      ['addDays(0)', later.addDays(0)],
+      ['addMonths(0)', later.addMonths(0)],
+      ['addYears(0)', later.addYears(0)],
+      ['withZoneSameLocal', later.withZoneSameLocal(tz)],
+      ['withZoneSameLocal, recased id', recased],
+    ]) {
+      assert.equal(result.epochMilliseconds, later.epochMilliseconds, name);
+      assert.equal(result.offset, 1 * H, name);
+    }
+    assert.equal(recased.tz, 'europe/bratislava');
+  });
+
+  test('same-zone identity does not override explicit fold disambiguation', () => {
+    const tz = 'Europe/Bratislava';
+    const later = ChronoZoned.parse('2024-10-27T02:30', tz, 'later');
+    assert.equal(later.withZoneSameLocal(tz, 'compatible').offset, 2 * H);
+    assert.equal(later.withZoneSameLocal(tz, 'earlier').offset, 2 * H);
+    assert.equal(later.withZoneSameLocal(tz, 'later').epochMilliseconds, later.epochMilliseconds);
+    assert.throws(() => later.withZoneSameLocal(tz, 'reject'), AmbiguousTimeError);
+  });
+
+  test('a different zone still uses compatible fold disambiguation', () => {
+    const local = ChronoZoned.parse('2024-10-27T02:30', 'Africa/Lagos');
+    assert.equal(local.offset, 1 * H, 'the source offset also exists in the target fold');
+    assert.equal(local.withZoneSameLocal('Europe/Bratislava').offset, 2 * H);
+  });
+
+  test('same-zone identity still validates a directly constructed zone', () => {
+    const invalid = new ChronoZoned(at('2024-01-01T00:00:00Z'), 'Not/AZone');
+    assert.throws(() => invalid.withZoneSameLocal('Not/AZone'), RangeError);
   });
 });
