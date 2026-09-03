@@ -1108,7 +1108,14 @@ export class ChronoZoned {
     if (disambiguation === undefined && sameZoneId(tz, this.tz)) {
       return new ChronoZoned(this.ms, checkedZone(tz));
     }
-    return this.toPlain().assumeZone(tz, disambiguation ?? 'compatible');
+    const zoneId = checkedZone(tz);
+    if (!this.isValid) return new ChronoZoned(unsafeEpochMs(Number.NaN), zoneId);
+    // A valid endpoint instant can have a local reading just outside ChronoPlain's narrower
+    // range. Resolve that padded wall clock directly so a different offset can still move
+    // it back to a representable instant; utcFromWall validates the final instant.
+    const wall = checkedZonedWall(this.ms + offsetAt(this.tz, this.ms));
+    return new ChronoZoned(checkedEpochMs(utcFromWall(
+      zoneId, unsafeWallMs(wall), disambiguation ?? 'compatible')), zoneId);
   }
 
   /** The moment, without the zone. */

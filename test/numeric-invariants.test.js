@@ -79,6 +79,18 @@ describe('parsing fails closed outside the ECMAScript time range', () => {
     }
   });
 
+  test('same-local zone changes can resolve a padded endpoint wall clock', () => {
+    const HOUR = 3_600_000;
+    const maximum = ChronoZoned.fromEpochMs(MAX, 'Etc/GMT-12');
+    assert.equal(maximum.withZoneSameLocal('Etc/GMT-12', 'later').epochMilliseconds, MAX);
+    assert.equal(maximum.withZoneSameLocal('Etc/GMT-14').epochMilliseconds, MAX - 2 * HOUR);
+    assert.throws(() => maximum.withZoneSameLocal('UTC'), InvalidInstantError);
+
+    const minimum = ChronoZoned.fromEpochMs(-MAX, 'Etc/GMT+10');
+    assert.equal(minimum.withZoneSameLocal('Etc/GMT+12').epochMilliseconds, -MAX + 2 * HOUR);
+    assert.throws(() => minimum.withZoneSameLocal('UTC'), InvalidInstantError);
+  });
+
   test('endpoint probe clamps do not make out-of-range instants valid', () => {
     assert.equal(offsetAt('UTC', MAX), 0);
     assert.equal(offsetAt('UTC', -MAX), 0);
