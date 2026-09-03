@@ -5,7 +5,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseISO } from '../lib/core.js';
-import { ChronoInstant, InvalidInstantError } from '../lib/index.js';
+import { ChronoInstant, ChronoPlain, InvalidInstantError } from '../lib/index.js';
 import { EDGE_INSTANTS, scattered, isoCanonical, isoNoFraction, isoWithOffset, utc } from './helpers.js';
 
 describe('parseISO — accepted forms', () => {
@@ -27,6 +27,8 @@ describe('parseISO — accepted forms', () => {
     ['extra precision truncates, not rounds', '2024-03-15T10:30:00.999999999Z', utc(2024, 3, 15, 10, 30, 0, 999)],
     ['truncation does not round up', '2024-03-15T10:30:00.0009Z', utc(2024, 3, 15, 10, 30, 0, 0)],
     ['expanded year, positive', '+010000-01-01T00:00:00.000Z', Date.UTC(10000, 0, 1)],
+    ['offset with seconds', '1970-01-01T00:44:30+00:44:30', 0],
+    ['compact offset with seconds', '1970-01-01T00:44:30+004430', 0],
     ['leap day', '2024-02-29T00:00:00.000Z', utc(2024, 2, 29)],
     ['leap day in a ÷400 year', '2000-02-29T00:00:00.000Z', utc(2000, 2, 29)],
     ['epoch', '1970-01-01T00:00:00.000Z', 0],
@@ -37,6 +39,15 @@ describe('parseISO — accepted forms', () => {
   for (const [name, input, expected] of cases) {
     test(name, () => assert.equal(parseISO(input), expected, input));
   }
+});
+
+describe('ChronoPlain parsing', () => {
+  test('the canonical fast path never reuses the preceding parse offset', () => {
+    assert.equal(ChronoPlain.parse('2024-01-01T10:00:00+02:00').toPlainISOString(),
+                 '2024-01-01T10:00:00');
+    assert.equal(ChronoPlain.parse('2024-03-15T10:30:00.123Z').toPlainISOString(),
+                 '2024-03-15T10:30:00.123');
+  });
 });
 
 describe('parseISO — rejected forms', () => {

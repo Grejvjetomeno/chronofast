@@ -10,7 +10,8 @@ import assert from 'node:assert/strict';
 import {
   offsetAt, offsetAtUncached, utcFromWall, formatZoned, toZonedISODate,
   startOfDayZoned, addDaysZoned, addMonthsZoned, zonedFields,
-  zoneStats, resetZoneCaches, hasFastOffsetPath, AmbiguousTimeError,
+  zoneStats, resetZoneCaches, hasFastOffsetPath, formatLocale, localeFormatterCount,
+  AmbiguousTimeError,
 } from '../lib/zone.js';
 import { parseISO, cY, cM, cD, cH, MS_HOUR } from '../lib/core.js';
 import { ChronoZoned, ChronoInstant, ChronoPlain } from '../lib/index.js';
@@ -39,6 +40,55 @@ describe('offsetAt — known values', () => {
   for (const [name, tz, iso, expected] of cases) {
     test(name, () => assert.equal(offsetAt(tz, at(iso)), expected));
   }
+});
+
+describe('historical and range-edge offsets', () => {
+  test('second-level historical offsets are preserved and round-trip', () => {
+    const t = 0;
+    const expected = -(44 * 60 + 30) * 1000;
+    assert.equal(offsetAtUncached('Africa/Monrovia', t), expected);
+    assert.equal(offsetAt('Africa/Monrovia', t), expected);
+    const text = formatZoned('Africa/Monrovia', t);
+    assert.equal(text, '1969-12-31T23:15:30.000-00:44:30');
+    assert.equal(parseISO(text), t);
+  });
+
+  test('the valid ECMAScript time-value endpoints do not probe beyond Intl range', () => {
+    for (const t of [-8.64e15, 8.64e15]) {
+      assert.equal(offsetAt('UTC', t), 0);
+      assert.equal(offsetAt('UTC', t), 0, 'cached lookup remains valid');
+      assert.equal(utcFromWall('UTC', t), t);
+    }
+  });
+
+  test('wall-time resolution cannot move a boundary value outside the instant range', () => {
+    assert.throws(
+      () => ChronoPlain.parse('+275760-09-13T00:00').assumeZone('Etc/GMT+12'),
+      RangeError,
+    );
+    assert.throws(
+      () => ChronoPlain.parse('-271821-04-20T00:00').assumeZone('Etc/GMT-12'),
+      RangeError,
+    );
+
+    assert.equal(
+      ChronoPlain.parse('+275760-09-13T00:00').assumeZone('Etc/GMT-12').isValid,
+      true,
+    );
+    assert.equal(
+      ChronoPlain.parse('-271821-04-20T00:00').assumeZone('Etc/GMT+12').isValid,
+      true,
+    );
+
+    assert.equal(
+      ChronoZoned.tryParse('+275760-09-13T00:00', 'Etc/GMT+12'),
+      null,
+    );
+    assert.equal(
+      ChronoZoned.tryParse('-271821-04-20T00:00', 'Etc/GMT-12'),
+      null,
+    );
+  });
 });
 
 describe('offsetAt — DST transitions resolve to the second', () => {
@@ -356,6 +406,13 @@ describe('capability reporting', () => {
   });
 });
 
+test('resetZoneCaches drops the locale formatter cache too', () => {
+  formatLocale(0, 'UTC', 'en-US', { dateStyle: 'full' }, 1);
+  assert.ok(localeFormatterCount() > 0);
+  resetZoneCaches();
+  assert.equal(localeFormatterCount(), 0);
+});
+
 describe('a zone designator decides what a string means', () => {
   const TZ = 'Europe/Bratislava';
 
@@ -379,6 +436,13 @@ describe('a zone designator decides what a string means', () => {
 
   test('a date-only string is a local date, i.e. local midnight', () => {
     assert.equal(ChronoZoned.parse('2000-09-01', TZ).toISOString(), '2000-09-01T00:00:00.000+02:00');
+  });
+
+  test('a designator on an accepted date-only string still names an instant', () => {
+    assert.equal(ChronoZoned.parse('2000-09-01Z', TZ).toInstant().toISOString(),
+                 '2000-09-01T00:00:00.000Z');
+    assert.equal(ChronoZoned.parse('2000-09-01+02:00', TZ).toInstant().toISOString(),
+                 '2000-08-31T22:00:00.000Z');
   });
 
   test('the offset used is the one in force on that date, not a fixed guess', () => {
